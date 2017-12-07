@@ -1,0 +1,10 @@
+{
+    "files.associations": {
+        "array": "cpp",
+        "functional": "cpp",
+        "future": "cpp",
+        "tuple": "cpp",
+        "utility": "cpp",
+        "imgproc.hpp": "c"
+    }
+}
