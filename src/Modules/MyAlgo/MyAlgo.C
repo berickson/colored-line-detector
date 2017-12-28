@@ -24,6 +24,9 @@
 using namespace std;
 
 char color_name(float r, float g, float b){
+  if (r < 0.05 && g < 0.05) {
+    return 'k';
+  }
   if (r > 2 * g){
     return 'r';
   }
@@ -33,6 +36,7 @@ char color_name(float r, float g, float b){
   if (g > 2 * r){
     return 'g';
   }
+
   return 'w';
 }
 
@@ -105,7 +109,6 @@ class MyAlgo : public jevois::Module
     virtual void process(jevois::InputFrame && inframe, jevois::OutputFrame && outframe) override
     {
       ++frame_number;
-      sendSerial("processing frame");
 
       // Wait for next available camera image:
       jevois::RawImage const inimg = inframe.get(true);
@@ -125,7 +128,7 @@ class MyAlgo : public jevois::Module
       cv::Mat rgb = jevois::rawimage::convertToCvRGB(inimg);
       auto image_width = rgb.cols;
       auto image_height = rgb.rows;
-      auto num_sensors = 20;
+      auto num_sensors = 10;
       auto sensor_width = image_width/num_sensors;
       auto sensor_height = sensor_width;
       stringstream serial_message;
@@ -152,6 +155,8 @@ class MyAlgo : public jevois::Module
           jevois_c = jevois::yuyv::MedGreen;
         } else if (c == 'b') {
           jevois_c = jevois::yuyv::DarkTeal;
+        } else if (c =='k') {
+          jevois_c = jevois::yuyv::Black;
         }
         const int thickness = 3;
         jevois::rawimage::drawFilledRect(outimg, roi.x, roi.y-20, sensor_width,20, jevois::yuyv::DarkGrey);
