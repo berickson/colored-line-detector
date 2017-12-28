@@ -16,6 +16,7 @@
 /*! \file */
 
 #include <jevois/Core/Module.H>
+//#include <jevois/Core/Serial.H>
 #include <jevois/Image/RawImageOps.H>
 #include <sstream>
 #include <opencv2/imgproc/imgproc.hpp>
@@ -39,7 +40,7 @@ char color_name(float r, float g, float b){
 double median(cv::Mat Input, int nVals){
 
 // COMPUTE HISTOGRAM OF SINGLE CHANNEL MATRIX
-float range[] = { 0, nVals };
+float range[] = { 0, float(nVals) };
 const float* histRange = { range };
 bool uniform = true; bool accumulate = false;
 cv::Mat hist;
@@ -54,7 +55,7 @@ for (int i = 1; i <= nVals-1; i++){
 cdf /= Input.total();
 
 // COMPUTE MEDIAN
-double medianVal;
+double medianVal = NAN;
 for (int i = 0; i <= nVals-1; i++){
     if (cdf.at<float>(i) >= 0.5) { medianVal = i;  break; }
 }
@@ -83,16 +84,10 @@ return medianVal/nVals; }
       components that are used in several modules, and each module's .so file contains only the code specific to that
       module.
 
-    @author Sample Author
+    @author Brian Erickson
 
     @videomapping YUYV 639 480 28.5 YUYV 640 480 28.5 BrianErickson MyAlgo
-    @email sampleemail\@samplecompany.com
-    @address 123 First Street, Los Angeles, CA 90012
-    @copyright Copyright (C) 2017 by Sample Author
-    @mainurl http://samplecompany.com
-    @supporturl http://samplecompany.com/support
-    @otherurl http://samplecompany.com/about
-    @license GPL v3
+    @email berickson\@gmail.com
     @distribution Unrestricted
     @restrictions None */
 class MyAlgo : public jevois::Module
@@ -110,6 +105,7 @@ class MyAlgo : public jevois::Module
     virtual void process(jevois::InputFrame && inframe, jevois::OutputFrame && outframe) override
     {
       ++frame_number;
+      sendSerial("processing frame");
 
       // Wait for next available camera image:
       jevois::RawImage const inimg = inframe.get(true);
@@ -118,9 +114,6 @@ class MyAlgo : public jevois::Module
       // We only support YUYV pixels in this example, any resolution:
       inimg.require("input", inimg.width, inimg.height, V4L2_PIX_FMT_YUYV);
 
-
-     
-     
       // Wait for an image from our gadget driver into which we will put our results:
       jevois::RawImage outimg = outframe.get();
       memcpy(outimg.pixelsw<void>(), inimg.pixels<void>(), std::min(inimg.buf->length(), outimg.buf->length()));
@@ -132,9 +125,10 @@ class MyAlgo : public jevois::Module
       cv::Mat rgb = jevois::rawimage::convertToCvRGB(inimg);
       auto image_width = rgb.cols;
       auto image_height = rgb.rows;
-      auto num_sensors = 5;
+      auto num_sensors = 20;
       auto sensor_width = image_width/num_sensors;
       auto sensor_height = sensor_width;
+      stringstream serial_message;
       for(int i =0; i < num_sensors; i++) {
         // extract sub-image in sensor region
         auto roi = cv::Rect(sensor_width*i,(image_height-sensor_height)/2,sensor_width,sensor_height);
@@ -149,6 +143,7 @@ class MyAlgo : public jevois::Module
         ss.width(4);
         ss.setf( std::ios::fixed, std:: ios::floatfield );
         char c =  color_name(median_r, median_g, median_b);
+        serial_message << c;
         ss << c << " : " << median_r << "," << median_g << "," << median_b;
         int jevois_c = jevois::yuyv::White;
         if (c=='r') {
@@ -162,8 +157,10 @@ class MyAlgo : public jevois::Module
         jevois::rawimage::drawFilledRect(outimg, roi.x, roi.y-20, sensor_width,20, jevois::yuyv::DarkGrey);
         jevois::rawimage::writeText(outimg, ss.str().c_str(), roi.x, roi.y-18, jevois::yuyv::White, jevois::rawimage::Font6x10);
         jevois::rawimage::drawRect(outimg, roi.x, roi.y, sensor_width, sensor_height, thickness, jevois_c);
-
       }
+
+      // Send detected colors over usb
+      sendSerial(serial_message.str());
 
       // Print a text message:
       //jevois::rawimage::writeText(outimg, "Hello JeVois!", 50, 50, jevois::yuyv::White, jevois::rawimage::Font20x38);

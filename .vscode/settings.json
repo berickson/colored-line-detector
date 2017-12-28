@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "*.ipp": "c",
+        "system_error": "c"
+    }
+}
