@@ -90,18 +90,18 @@ return medianVal/nVals; }
 
     @author Brian Erickson
 
-    @videomapping YUYV 639 480 28.5 YUYV 640 480 28.5 BrianErickson MyAlgo
+    @videomapping YUYV 639 480 28.5 YUYV 640 480 28.5 BrianErickson ColoredLineDetector
     @email berickson\@gmail.com
     @distribution Unrestricted
     @restrictions None */
-class MyAlgo : public jevois::Module
+class ColoredLineDetector : public jevois::Module
 {
   public:
     //! Default base class constructor ok
     using jevois::Module::Module;
 
     //! Virtual destructor for safe inheritance
-    virtual ~MyAlgo() { }
+    virtual ~ColoredLineDetector() { }
 
     int frame_number = 0;
 
@@ -182,4 +182,4 @@ class MyAlgo : public jevois::Module
 };
 
 // Allow the module to be loaded as a shared object (.so) file:
-JEVOIS_REGISTER_MODULE(MyAlgo);
+JEVOIS_REGISTER_MODULE(ColoredLineDetector);
