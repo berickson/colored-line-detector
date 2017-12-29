@@ -1,22 +1,4 @@
-// ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//
-// JeVois Smart Embedded Machine Vision Toolkit - Copyright (C) 2016 by Laurent Itti, the University of Southern
-// California (USC), and iLab at USC. See http://iLab.usc.edu and http://jevois.org for information about this project.
-//
-// This file is part of the JeVois Smart Embedded Machine Vision Toolkit.  This program is free software; you can
-// redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software
-// Foundation, version 2.  This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
-// without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public
-// License for more details.  You should have received a copy of the GNU General Public License along with this program;
-// if not, write to the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-//
-// Contact information: Laurent Itti - 3641 Watt Way, HNB-07A - Los Angeles, CA 90089-2520 - USA.
-// Tel: +1 213 740 3527 - itti@pollux.usc.edu - http://iLab.usc.edu - http://jevois.org
-// ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-/*! \file */
-
 #include <jevois/Core/Module.H>
-//#include <jevois/Core/Serial.H>
 #include <jevois/Image/RawImageOps.H>
 #include <sstream>
 #include <opencv2/imgproc/imgproc.hpp>
@@ -37,7 +19,7 @@ char color_name(float r, float g, float b){
     return 'g';
   }
 
-  return 'w';
+  return '.';
 }
 
 
@@ -68,32 +50,14 @@ return medianVal/nVals; }
 
 // icon by Catalin Fertu in cinema at flaticon
 
-//! JeVois sample module
-/*! This module is provided as an example of how to create a new standalone module.
-
-    JeVois provides helper scripts and files to assist you in programming new modules, following two basic formats:
-
-    - if you wish to only create a single module that will execute a specific function, or a collection of such modules
-      where there is no shared code between the modules (i.e., each module does things that do not relate to the other
-      modules), use the skeleton provided by this sample module. Here, all the code for the sample module is compiled
-      into a single shared object (.so) file that is loaded by the JeVois engine when the corresponding video output
-      format is selected by the host computer.
-
-    - if you are planning to write a collection of modules with some shared algorithms among several of the modules, it
-      is better to first create machine vision Components that implement the algorithms that are shared among several of
-      your modules. You would then compile all your components into a first shared library (.so) file, and then compile
-      each module into its own shared object (.so) file that depends on and automatically loads your shared library file
-      when it is selected by the host computer. The jevoisbase library and collection of components and modules is an
-      example for how to achieve that, where libjevoisbase.so contains code for Saliency, ObjectRecognition, etc
-      components that are used in several modules, and each module's .so file contains only the code specific to that
-      module.
-
-    @author Brian Erickson
-
-    @videomapping YUYV 639 480 28.5 YUYV 640 480 28.5 BrianErickson ColoredLineDetector
-    @email berickson\@gmail.com
-    @distribution Unrestricted
-    @restrictions None */
+// ColoredLineDetection module
+//
+//    @author Brian Erickson
+//
+//    @videomapping YUYV 639 480 28.5 YUYV 640 480 28.5 BrianErickson ColoredLineDetector
+//    @email berickson\@gmail.com
+//    @distribution Unrestricted
+//    @restrictions None */
 class ColoredLineDetector : public jevois::Module
 {
   public:
@@ -104,6 +68,73 @@ class ColoredLineDetector : public jevois::Module
     virtual ~ColoredLineDetector() { }
 
     int frame_number = 0;
+
+    // this non-virtual form of process will be called by both virtual process methods
+    // so, visual might not be valid
+    void process(const jevois::RawImage & inimg, jevois::RawImage & visual) {
+      // Just copy the pixel data over:
+      if(visual.valid()) {
+        memcpy(visual.pixelsw<void>(), inimg.pixels<void>(), std::min(inimg.buf->length(), visual.buf->length()));
+      }
+
+    
+      cv::Mat rgb = jevois::rawimage::convertToCvRGB(inimg);
+      auto image_width = rgb.cols;
+      auto image_height = rgb.rows;
+      auto num_sensors = 10;
+      auto sensor_width = image_width/num_sensors;
+      auto sensor_height = sensor_width;
+      stringstream serial_message;
+      serial_message << "cld "; // cld is the message identifier
+      for(int i =0; i < num_sensors; i++) {
+        // extract sub-image in sensor region
+        auto roi = cv::Rect(sensor_width*i,(image_height-sensor_height)/2,sensor_width,sensor_height);
+        cv::Mat sensor_rgb = rgb(roi);
+        cv::Mat planes[3];
+        cv::split(sensor_rgb,planes);
+        auto median_r = median(planes[0],256);
+        auto median_g = median(planes[1],256);
+        auto median_b = median(planes[2],256);
+        char c =  color_name(median_r, median_g, median_b);
+        serial_message << c;
+        if(visual.valid()) {
+          stringstream ss;
+          ss.precision(2);
+          ss.width(4);
+          ss.setf( std::ios::fixed, std:: ios::floatfield );
+          ss << c << " : " << median_r << "," << median_g << "," << median_b;
+          int jevois_c = jevois::yuyv::White;
+          if (c=='r') {
+            jevois_c = jevois::yuyv::DarkPink;
+          } else if (c == 'g') {
+            jevois_c = jevois::yuyv::MedGreen;
+          } else if (c == 'b') {
+            jevois_c = jevois::yuyv::DarkTeal;
+          } else if (c =='k') {
+            jevois_c = jevois::yuyv::Black;
+          }
+          const int thickness = 3;
+          jevois::rawimage::drawFilledRect(visual, roi.x, roi.y-20, sensor_width,20, jevois::yuyv::DarkGrey);
+          jevois::rawimage::writeText(visual, ss.str().c_str(), roi.x, roi.y-18, jevois::yuyv::White, jevois::rawimage::Font6x10);
+          jevois::rawimage::drawRect(visual, roi.x, roi.y, sensor_width, sensor_height, thickness, jevois_c);
+        }
+      }
+
+      // Send detected colors over usb
+      sendSerial(serial_message.str());
+
+      // Print a text message:
+      //jevois::rawimage::writeText(visual, "Hello JeVois!", 50, 50, jevois::yuyv::White, jevois::rawimage::Font20x38);
+      stringstream ss;
+      ss << "Frame: " << frame_number;
+      jevois::rawimage::writeText(visual, ss.str().c_str(), 50, 90, jevois::yuyv::White, jevois::rawimage::Font6x10);
+    }
+
+    virtual void process(jevois::InputFrame && frame) {
+      jevois::RawImage visual; // unallocated pixels, will not draw anything
+      jevois::RawImage img = frame.get(true);
+      process(img, visual);
+    }
 
     //! Processing function
     virtual void process(jevois::InputFrame && inframe, jevois::OutputFrame && outframe) override
@@ -118,60 +149,12 @@ class ColoredLineDetector : public jevois::Module
       inimg.require("input", inimg.width, inimg.height, V4L2_PIX_FMT_YUYV);
 
       // Wait for an image from our gadget driver into which we will put our results:
-      jevois::RawImage outimg = outframe.get();
-      memcpy(outimg.pixelsw<void>(), inimg.pixels<void>(), std::min(inimg.buf->length(), outimg.buf->length()));
+      jevois::RawImage visual = outframe.get();
 
       // Enforce that the input and output formats and image sizes match:
-      outimg.require("output", inimg.width, inimg.height, inimg.fmt);
-      
-      // Just copy the pixel data over:
-      cv::Mat rgb = jevois::rawimage::convertToCvRGB(inimg);
-      auto image_width = rgb.cols;
-      auto image_height = rgb.rows;
-      auto num_sensors = 10;
-      auto sensor_width = image_width/num_sensors;
-      auto sensor_height = sensor_width;
-      stringstream serial_message;
-      for(int i =0; i < num_sensors; i++) {
-        // extract sub-image in sensor region
-        auto roi = cv::Rect(sensor_width*i,(image_height-sensor_height)/2,sensor_width,sensor_height);
-        cv::Mat sensor_rgb = rgb(roi);
-        cv::Mat planes[3];
-        cv::split(sensor_rgb,planes);
-        auto median_r = median(planes[0],256);
-        auto median_g = median(planes[1],256);
-        auto median_b = median(planes[2],256);
-        stringstream ss;
-        ss.precision(2);
-        ss.width(4);
-        ss.setf( std::ios::fixed, std:: ios::floatfield );
-        char c =  color_name(median_r, median_g, median_b);
-        serial_message << c;
-        ss << c << " : " << median_r << "," << median_g << "," << median_b;
-        int jevois_c = jevois::yuyv::White;
-        if (c=='r') {
-          jevois_c = jevois::yuyv::DarkPink;
-        } else if (c == 'g') {
-          jevois_c = jevois::yuyv::MedGreen;
-        } else if (c == 'b') {
-          jevois_c = jevois::yuyv::DarkTeal;
-        } else if (c =='k') {
-          jevois_c = jevois::yuyv::Black;
-        }
-        const int thickness = 3;
-        jevois::rawimage::drawFilledRect(outimg, roi.x, roi.y-20, sensor_width,20, jevois::yuyv::DarkGrey);
-        jevois::rawimage::writeText(outimg, ss.str().c_str(), roi.x, roi.y-18, jevois::yuyv::White, jevois::rawimage::Font6x10);
-        jevois::rawimage::drawRect(outimg, roi.x, roi.y, sensor_width, sensor_height, thickness, jevois_c);
-      }
+      visual.require("output", inimg.width, inimg.height, inimg.fmt);
 
-      // Send detected colors over usb
-      sendSerial(serial_message.str());
-
-      // Print a text message:
-      //jevois::rawimage::writeText(outimg, "Hello JeVois!", 50, 50, jevois::yuyv::White, jevois::rawimage::Font20x38);
-      stringstream ss;
-      ss << "Frame: " << frame_number;
-      jevois::rawimage::writeText(outimg, ss.str().c_str(), 50, 90, jevois::yuyv::White, jevois::rawimage::Font6x10);
+      process(inimg, visual);
       
       // Let camera know we are done processing the input image:
       inframe.done(); // NOTE: optional here, inframe destructor would call it anyway

@@ -1,6 +1,8 @@
 {
     "files.associations": {
         "*.ipp": "c",
-        "system_error": "c"
+        "system_error": "c",
+        "array": "c",
+        "imgproc.hpp": "c"
     }
 }
