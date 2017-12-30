@@ -81,28 +81,37 @@ class ColoredLineDetector : public jevois::Module
       cv::Mat rgb = jevois::rawimage::convertToCvRGB(inimg);
       auto image_width = rgb.cols;
       auto image_height = rgb.rows;
-      auto num_sensors = 10;
-      auto sensor_width = image_width/num_sensors;
-      auto sensor_height = sensor_width;
+      auto num_sensors = 7;
+      auto sensor_spacing = image_width/num_sensors;
+      auto sensor_height = 10;
+      auto sensor_width = 10;
       stringstream serial_message;
       serial_message << "cld "; // cld is the message identifier
+      auto sensor_cy = image_height / 2;
+      if(visual.valid()) {
+        // background rect for text
+        jevois::rawimage::drawFilledRect(visual, 0, sensor_cy-20, image_width ,20, jevois::yuyv::DarkGrey);
+      }
       for(int i =0; i < num_sensors; i++) {
         // extract sub-image in sensor region
-        auto roi = cv::Rect(sensor_width*i,(image_height-sensor_height)/2,sensor_width,sensor_height);
+        auto sensor_cx = sensor_spacing * i + sensor_spacing/2;
+        auto roi = cv::Rect(sensor_cx - sensor_width/2, sensor_cy + sensor_height / 2, sensor_width, sensor_height);
         cv::Mat sensor_rgb = rgb(roi);
+        //cv::Mat sensor_lab;
+        //cv::cvtColor(sensor_rgb, sensor_rgb, cv::COLOR_RGB2Lab);
         cv::Mat planes[3];
         cv::split(sensor_rgb,planes);
         auto median_r = median(planes[0],256);
         auto median_g = median(planes[1],256);
         auto median_b = median(planes[2],256);
+
         char c =  color_name(median_r, median_g, median_b);
         serial_message << c;
         if(visual.valid()) {
           stringstream ss;
-          ss.precision(2);
-          ss.width(4);
-          ss.setf( std::ios::fixed, std:: ios::floatfield );
-          ss << c << " : " << median_r << "," << median_g << "," << median_b;
+          ss << c << std::setw(2) << std::setfill('0') << int(100*median_r) 
+          << std::setw(2) << std::setfill('0') << int(100*median_g) 
+          << std::setw(2) << std::setfill('0')<< int(100*median_b);
           int jevois_c = jevois::yuyv::White;
           if (c=='r') {
             jevois_c = jevois::yuyv::DarkPink;
@@ -114,20 +123,19 @@ class ColoredLineDetector : public jevois::Module
             jevois_c = jevois::yuyv::Black;
           }
           const int thickness = 3;
-          jevois::rawimage::drawFilledRect(visual, roi.x, roi.y-20, sensor_width,20, jevois::yuyv::DarkGrey);
-          jevois::rawimage::writeText(visual, ss.str().c_str(), roi.x, roi.y-18, jevois::yuyv::White, jevois::rawimage::Font6x10);
-          jevois::rawimage::drawRect(visual, roi.x, roi.y, sensor_width, sensor_height, thickness, jevois_c);
+          jevois::rawimage::writeText(visual, ss.str().c_str(), i*sensor_spacing, roi.y-18, jevois::yuyv::White, jevois::rawimage::Font6x10);
+          jevois::rawimage::drawRect(visual, roi.x-thickness, roi.y-thickness, roi.width+thickness*2, roi.height+thickness*2, thickness, jevois_c);
         }
       }
-
+      if(visual.valid()) {
+        // Print a text message:
+        stringstream ss;
+        ss << "Frame: " << frame_number;
+        jevois::rawimage::writeText(visual, ss.str().c_str(), 50, 90, jevois::yuyv::White, jevois::rawimage::Font6x10);
+      }
       // Send detected colors over usb
       sendSerial(serial_message.str());
 
-      // Print a text message:
-      //jevois::rawimage::writeText(visual, "Hello JeVois!", 50, 50, jevois::yuyv::White, jevois::rawimage::Font20x38);
-      stringstream ss;
-      ss << "Frame: " << frame_number;
-      jevois::rawimage::writeText(visual, ss.str().c_str(), 50, 90, jevois::yuyv::White, jevois::rawimage::Font6x10);
     }
 
     virtual void process(jevois::InputFrame && frame) {
