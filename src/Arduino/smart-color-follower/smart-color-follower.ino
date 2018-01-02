@@ -7,6 +7,7 @@ Programmer: USB Asp
 #include <Servo.h>
 #include <FlexiTimer2.h>
 #include<SoftwareSerial.h>
+#include <SerialCommands.h> // see https://github.com/ppedro74/Arduino-SerialCommands
 
 
 #include "math.h"
@@ -43,6 +44,11 @@ const int pin_left_encoder = A0;
 
 
 // globals
+
+// buffer must be big enough for command, arguments, terminiators and null
+char serial_command_buffer_[100];
+SerialCommands serial_commands_(&Serial, serial_command_buffer_, sizeof(serial_command_buffer_), "\r\n", " ");
+
 Servo servo;
 Servo servo2;
 IRrecv ir_rx(pin_ir_rx);
@@ -124,6 +130,7 @@ void mcc_low(int pin) {
   digitalWrite(pin, LOW);
 }
 
+SerialCommand serial_command_colors_sensed("cld",cmd_colors_sensed);
 
 void setup() {
   mcc_high(pin_mcc_ena);
@@ -134,6 +141,9 @@ void setup() {
   mcc_high(pin_mcc_in4);
 
   Serial.begin(115200);
+  serial_commands_.SetDefaultHandler(cmd_unrecognized);
+  serial_commands_.AddCommand(&serial_command_colors_sensed);
+  
   bluetooth.begin(9600);
 
   
@@ -388,8 +398,8 @@ void follow_colors() {
       if(s[i]!='.') {
         int line_position = map(i,0,l-1,-100,100);
         trace((String)"Line at "+ line_position);
-        int left_percent = constrain(map(line_position,0,-100,100,-60),-100,100);
-        int right_percent = constrain(map(line_position,0,100,100,-60),-100,100);
+        int left_percent = constrain(map(line_position,0,-100,100,-100),-100,100);
+        int right_percent = constrain(map(line_position,0,100,100,-100),-100,100);
         set_motor_speeds(left_percent, right_percent);
         return;
       }
@@ -701,16 +711,55 @@ void go_back_and_forth() {
     delay(3000);
 }
 
+
+//This is the default handler, and gets called when no other command matches. 
+void cmd_unrecognized(SerialCommands* sender, const char* cmd)
+{
+}
+
+void cmd_colors_sensed(SerialCommands * sender) {
+  char * colors = sender->Next();
+  if(colors == NULL) {
+    // invalid colors
+    return;
+  }
+  char i = 0;
+  char first_color_index = -1;
+  char last_color_index = -1;
+  int length = 0;
+  for(char* color=colors, i=0; *color; ++color, ++i) {
+    length++;
+    if(*color != '.') {
+      last_color_index = i;
+      if(first_color_index == -1) {
+        first_color_index = i;
+      }
+    }
+  }
+
+  Serial.println((String) colors + " first_color_index:" + (int)first_color_index + " last_color_index:" + (int)last_color_index + " length:" + (int)length);
+
+  // set line position if we see one
+  if(first_color_index != -1) {
+    // calculate line position in range [-100,100]
+    int line_position = map(first_color_index + last_color_index,0,2*(length-1),-100,100);
+
+    int left_percent = constrain(map(line_position, 0, -100, 100, -100), -100, 100);
+    int right_percent = constrain(map(line_position, 0, 100, 100, -100), -100, 100);
+    set_motor_speeds(left_percent, right_percent);
+  }
+}
+
+
 // returns true if loop time passes through n ms boundary
 bool every_n_ms(unsigned long last_loop_ms, unsigned long loop_ms, unsigned long ms) {
   return (last_loop_ms % ms) + (loop_ms - last_loop_ms) >= ms;
-
 }
-
 int last_reported_right_encoder_count = 0;
 int last_reported_left_encoder_count = 0;
 void loop() {
-  follow_colors();
+  serial_commands_.ReadSerial();
+  //follow_colors();
   return;
   unsigned long loop_ms = millis();
   bool every_second = every_n_ms(last_loop_ms, loop_ms, 1000);
