@@ -1,0 +1,6 @@
+{
+    "sketch": "src/Arduino/smart-color-follower/smart-color-follower.ino",
+    "board": "arduino:avr:uno",
+    "port": "/dev/ttyACM0",
+    "output": "arduino-build"
+}

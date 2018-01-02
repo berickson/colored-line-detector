@@ -3,6 +3,8 @@ set -e
 cd pbuild
 make jvpkg
 cd ..
+echo streamoff >> /dev/ttyACM0
+sleep 1
 echo usbsd >> /dev/ttyACM0
 echo "giving time for usb to mount"
 sleep 5

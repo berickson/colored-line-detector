@@ -87,7 +87,7 @@ class ColoredLineDetector : public jevois::Module
       auto sensor_width = 10;
       stringstream serial_message;
       serial_message << "cld "; // cld is the message identifier
-      auto sensor_cy = image_height / 2;
+      auto sensor_cy = image_height - 20;
       if(visual.valid()) {
         // background rect for text
         jevois::rawimage::drawFilledRect(visual, 0, sensor_cy-20, image_width ,20, jevois::yuyv::DarkGrey);

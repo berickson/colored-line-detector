@@ -4,5 +4,6 @@
         "system_error": "c",
         "array": "c",
         "imgproc.hpp": "c"
-    }
+    },
+    "arduino.path":"/home/brian/arduino-1.8.3/"
 }
