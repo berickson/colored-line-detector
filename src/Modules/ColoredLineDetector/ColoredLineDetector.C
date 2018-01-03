@@ -89,18 +89,22 @@ class ColoredLineDetector : public jevois::Module,
       cv::Mat roi = grad_x(cv::Rect(0, 0, 10,grad_x.size().height));
       roi.setTo(0);
 
-      cv::Mat r;
-      grad_x.copyTo(r);
+      double min_grad, max_grad;
+      cv::minMaxLoc(grad_x, &min_grad, &max_grad);
+      cv::Mat r = grad_x / max_grad;
+      //grad_x.copyTo(r);
       r.setTo(0, r<0);
       cv::Mat l;
       grad_x.copyTo(l);
       l = -l;
       l.setTo(0, l < 0);
       cv::Mat left, right;
+      
       cv::convertScaleAbs(l,left);
-      cv::convertScaleAbs(r,right);
+      cv::convertScaleAbs(r,right,255);
       cv::threshold(left, left, 0,255,cv::THRESH_BINARY+cv::THRESH_OTSU);
-      cv::threshold(right, right, 0,255,cv::THRESH_BINARY+cv::THRESH_OTSU);
+      //cv::threshold(right, right, 0,255,cv::THRESH_BINARY+cv::THRESH_OTSU);
+      cv::threshold(right, right, 250,255,cv::THRESH_BINARY);
       vector<cv::Mat> channels;
       channels.push_back(left);
       channels.push_back(right);

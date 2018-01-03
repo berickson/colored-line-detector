@@ -9,7 +9,9 @@
         "hash_set": "cpp",
         "string_view": "cpp",
         "initializer_list": "cpp",
-        "utility": "cpp"
+        "utility": "cpp",
+        "rope": "cpp",
+        "slist": "cpp"
     },
     "arduino.path":"/home/brian/arduino-1.8.3/"
 }
