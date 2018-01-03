@@ -1,9 +1,15 @@
 {
     "files.associations": {
+        "*.C": "cpp",
         "*.ipp": "c",
         "system_error": "c",
         "array": "c",
-        "imgproc.hpp": "c"
+        "imgproc.hpp": "c",
+        "hash_map": "cpp",
+        "hash_set": "cpp",
+        "string_view": "cpp",
+        "initializer_list": "cpp",
+        "utility": "cpp"
     },
     "arduino.path":"/home/brian/arduino-1.8.3/"
 }

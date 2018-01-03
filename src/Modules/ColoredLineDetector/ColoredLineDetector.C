@@ -47,18 +47,18 @@ for (int i = 0; i <= nVals-1; i++){
 }
 return medianVal/nVals; }
 
+ static jevois::ParameterCategory const ParamCateg("Colored Line Detector options");
 
-// icon by Catalin Fertu in cinema at flaticon
+JEVOIS_DEFINE_ENUM_CLASS(AlgoEnum, (Sensors) (Edges) );
 
-// ColoredLineDetection module
-//
-//    @author Brian Erickson
-//
-//    @videomapping YUYV 639 480 28.5 YUYV 640 480 28.5 BrianErickson ColoredLineDetector
-//    @email berickson\@gmail.com
-//    @distribution Unrestricted
-//    @restrictions None */
-class ColoredLineDetector : public jevois::Module
+JEVOIS_DECLARE_PARAMETER(sensor_algorithm, AlgoEnum, "Algorithm class to use",
+                          AlgoEnum::Edges, AlgoEnum_Values, ParamCateg);
+JEVOIS_DECLARE_PARAMETER(x_sensor_count, int, "Number of sensors horizontally", 7, jevois::Range<int>(1, 100), ParamCateg);
+JEVOIS_DECLARE_PARAMETER(y_sensor_count, int, "Number of horizontal sensors along edges", 15, jevois::Range<int>(1, 100), ParamCateg);
+
+
+class ColoredLineDetector : public jevois::Module,
+  public jevois::Parameter<x_sensor_count, y_sensor_count, sensor_algorithm>
 {
   public:
     //! Default base class constructor ok
@@ -69,9 +69,57 @@ class ColoredLineDetector : public jevois::Module
 
     int frame_number = 0;
 
+    void process_edges(const jevois::RawImage & inimg, jevois::RawImage & visual) {
+      cv::Mat rgb = jevois::rawimage::convertToCvRGB(inimg);
+      cv::Mat gray;
+      cv::cvtColor(rgb, gray, cv::COLOR_RGB2GRAY);
+      int scale = 1;
+      int delta = 0;
+      int ddepth = CV_16S;
+
+      cv::Mat grad_x, grad_y;
+      cv::Mat abs_grad_x, abs_grad_y;
+      cv::Mat grad;
+      
+      GaussianBlur( gray, gray, cv::Size(13,13), 0, 0, cv::BORDER_REFLECT);
+      cv::Scharr( gray, grad_x, ddepth, 1, 0, scale, delta, cv::BORDER_REFLECT );
+      //cv::Sobel( gray, grad_x, ddepth, 1, 0, 3, scale, delta, cv::BORDER_REFLECT );
+
+      // set left 10 pixels to zero, we get boundary effects there, even with borders
+      cv::Mat roi = grad_x(cv::Rect(0, 0, 10,grad_x.size().height));
+      roi.setTo(0);
+
+      cv::Mat r;
+      grad_x.copyTo(r);
+      r.setTo(0, r<0);
+      cv::Mat l;
+      grad_x.copyTo(l);
+      l = -l;
+      l.setTo(0, l < 0);
+      cv::Mat left, right;
+      cv::convertScaleAbs(l,left);
+      cv::convertScaleAbs(r,right);
+      cv::threshold(left, left, 0,255,cv::THRESH_BINARY+cv::THRESH_OTSU);
+      cv::threshold(right, right, 0,255,cv::THRESH_BINARY+cv::THRESH_OTSU);
+      vector<cv::Mat> channels;
+      channels.push_back(left);
+      channels.push_back(right);
+      channels.push_back(cv::Mat::zeros(left.size(), left.type()));
+      cv::Mat merged;
+      cv::merge(channels, merged);
+      //jevois::rawimage::pasteGreyToYUYV(right,visual,0,0);
+      jevois::rawimage::pasteRGBtoYUYV(merged,visual,0,0);
+    }
+
     // this non-virtual form of process will be called by both virtual process methods
     // so, visual might not be valid
     void process(const jevois::RawImage & inimg, jevois::RawImage & visual) {
+
+      if(sensor_algorithm::get() == AlgoEnum::Edges) {
+        process_edges(inimg, visual);
+        return;
+      }
+
       // Just copy the pixel data over:
       if(visual.valid()) {
         memcpy(visual.pixelsw<void>(), inimg.pixels<void>(), std::min(inimg.buf->length(), visual.buf->length()));
@@ -81,7 +129,7 @@ class ColoredLineDetector : public jevois::Module
       cv::Mat rgb = jevois::rawimage::convertToCvRGB(inimg);
       auto image_width = rgb.cols;
       auto image_height = rgb.rows;
-      auto num_sensors = 7;
+      auto num_sensors = x_sensor_count::get();
       auto sensor_spacing = image_width/num_sensors;
       auto sensor_height = 10;
       auto sensor_width = 10;
