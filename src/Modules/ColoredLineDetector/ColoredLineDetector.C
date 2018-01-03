@@ -1,7 +1,9 @@
 #include <jevois/Core/Module.H>
 #include <jevois/Image/RawImageOps.H>
 #include <sstream>
+#include <iomanip>
 #include <opencv2/imgproc/imgproc.hpp>
+
 
 using namespace std;
 
@@ -91,26 +93,42 @@ class ColoredLineDetector : public jevois::Module,
 
       double min_grad, max_grad;
       cv::minMaxLoc(grad_x, &min_grad, &max_grad);
-      cv::Mat r = grad_x / max_grad;
-      //grad_x.copyTo(r);
-      r.setTo(0, r<0);
-      cv::Mat l;
-      grad_x.copyTo(l);
-      l = -l;
-      l.setTo(0, l < 0);
+      // todo: avoid divide by zero
+      cv::Mat r = grad_x / max_grad; 
+      cv::Mat l = grad_x / min_grad;
+      r.setTo(0, r>0.95);
+      l.setTo(0, l>0.95);
       cv::Mat left, right;
       
-      cv::convertScaleAbs(l,left);
-      cv::convertScaleAbs(r,right,255);
-      cv::threshold(left, left, 0,255,cv::THRESH_BINARY+cv::THRESH_OTSU);
-      //cv::threshold(right, right, 0,255,cv::THRESH_BINARY+cv::THRESH_OTSU);
-      cv::threshold(right, right, 250,255,cv::THRESH_BINARY);
+      cv::convertScaleAbs(l, left, 1000); // 1000 forces overflow, so I don't have to threshold
+      cv::convertScaleAbs(r, right, 1000);
+      //cv::threshold(left, left, 250,255,cv::THRESH_BINARY);
+      //cv::threshold(right, right, 250,255,cv::THRESH_BINARY);
       vector<cv::Mat> channels;
       channels.push_back(left);
       channels.push_back(right);
       channels.push_back(cv::Mat::zeros(left.size(), left.type()));
       cv::Mat merged;
       cv::merge(channels, merged);
+
+      // try to find lines and draw in RGB
+
+      // using contours and fitEllipse
+      vector<vector<cv::Point> > contours;
+      cv::findContours(left, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE,cv::Point(0,0));
+      for(auto contour:contours) {
+        if(contour.size() < 5) continue;
+        cv::RotatedRect ellipse = cv::fitEllipse(contour);
+        cv::Scalar color;
+        color = cv::Scalar(255,255,25);
+        cv::ellipse(merged,ellipse,color);
+        stringstream label;
+        label << std::setprecision(3) << ellipse.angle << " degs";
+        cv::putText(merged, label.str().c_str(), ellipse.center,cv::FONT_HERSHEY_SIMPLEX, 0.5, color, 1 );
+      }
+
+      //(x,y),(MA,ma),angle = cv2.fitEllipse(cnt)
+
       //jevois::rawimage::pasteGreyToYUYV(right,visual,0,0);
       jevois::rawimage::pasteRGBtoYUYV(merged,visual,0,0);
     }
