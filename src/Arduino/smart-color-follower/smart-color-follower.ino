@@ -130,7 +130,7 @@ void mcc_low(int pin) {
   digitalWrite(pin, LOW);
 }
 
-SerialCommand serial_command_colors_sensed("cld",cmd_colors_sensed);
+SerialCommand cmd_colors_sensed("cld",on_colors_sensed);
 
 void setup() {
   mcc_high(pin_mcc_ena);
@@ -141,8 +141,8 @@ void setup() {
   mcc_high(pin_mcc_in4);
 
   Serial.begin(115200);
-  serial_commands_.SetDefaultHandler(cmd_unrecognized);
-  serial_commands_.AddCommand(&serial_command_colors_sensed);
+  serial_commands_.SetDefaultHandler(on_unrecognized);
+  serial_commands_.AddCommand(&cmd_colors_sensed);
   
   bluetooth.begin(9600);
 
@@ -164,17 +164,7 @@ void setup() {
 
   // ir_rx.enableIRIn(); // Start the receiver
   mode = mode_follow_colors;
-/*
-  delay(10000); // wait for JeVois
-  Serial.write("setmapping 0\n");
-  delay(100);
-  Serial.write("setpar serlog Hard\n");
-  delay(100);
-  Serial.write("setpar serout Hard\n");
-  delay(100);
-  Serial.write("streamon\n");
-  delay(100);
-*/
+
   pinMode(pin_right_motor_enable,OUTPUT); 
   pinMode(pin_left_motor_enable,OUTPUT); 
 
@@ -375,37 +365,7 @@ void set_motor_speeds(int left_percent, int right_percent) {
   analogWrite(pin_right_motor_enable,abs(right_motor_speed));
 }
 
-String serial_buf;
-String last_colors;
 void follow_colors() {
-  while(Serial.available() > 0) {
-    char c = Serial.read();
-    if(c == '\r' || c == '\n') {
-      if(serial_buf.length() > 0) {
-        if(serial_buf.startsWith("cld ")) {
-          last_colors = serial_buf.substring(4);
-        }
-        serial_buf.remove(0); // clears the string
-      }
-    } else {
-      serial_buf.concat(c);
-    }
-  }
-  char * s = last_colors.c_str();
-  if(*s != 0) {
-    int l = last_colors.length();
-    for(int i = 0; i < l; ++i) {
-      if(s[i]!='.') {
-        int line_position = map(i,0,l-1,-100,100);
-        trace((String)"Line at "+ line_position);
-        int left_percent = constrain(map(line_position,0,-100,100,-100),-100,100);
-        int right_percent = constrain(map(line_position,0,100,100,-100),-100,100);
-        set_motor_speeds(left_percent, right_percent);
-        return;
-      }
-    }
-  }
-  
 }
 
 void follow_closest() {
@@ -480,7 +440,7 @@ void read_remote_control() {
     switch(key) {
       case 'F':       // forward
         heading_command = key;
-        mode = mode_follow_colors;
+        mode = mode_manual;
         break;
       case 'B':       // back
         heading_command = key;
@@ -713,11 +673,11 @@ void go_back_and_forth() {
 
 
 //This is the default handler, and gets called when no other command matches. 
-void cmd_unrecognized(SerialCommands* sender, const char* cmd)
+void on_unrecognized(SerialCommands* sender, const char* cmd)
 {
 }
 
-void cmd_colors_sensed(SerialCommands * sender) {
+void on_colors_sensed(SerialCommands * sender) {
   char * colors = sender->Next();
   if(colors == NULL) {
     // invalid colors
