@@ -58,6 +58,37 @@ JEVOIS_DECLARE_PARAMETER(sensor_algorithm, AlgoEnum, "Algorithm class to use",
 JEVOIS_DECLARE_PARAMETER(x_sensor_count, int, "Number of sensors horizontally", 7, jevois::Range<int>(1, 100), ParamCateg);
 JEVOIS_DECLARE_PARAMETER(y_sensor_count, int, "Number of horizontal sensors along edges", 15, jevois::Range<int>(1, 100), ParamCateg);
 
+void get_major_axis_segment(cv::RotatedRect r, cv::Point2f * p1, cv::Point2f * p2) {
+  cv::Point2f vertices[4];
+  r.points(vertices);
+  *p1 = (vertices[3]+vertices[0]) / 2.;
+  *p2 = (vertices[1]+vertices[2]) / 2.;
+
+
+}
+
+class Line {
+public:
+  // uses general form a * x + b * y + c = 0
+  double a,b,c;
+
+  // see  https://en.wikipedia.org/wiki/Linear_equation / Two-point form, general form equation
+  Line(cv::Point2f p1, cv::Point2f p2) {
+    a = p2.y-p1.y;
+    b = p1.x-p2.x;
+    c = p2.x*p1.y-p1.x*p2.y;
+  }
+
+  double x(double y) {
+    if(a == 0) return NAN;
+    return ( -b * y - c) / a;
+  }
+
+  double y(double x) {
+    if(b == 0) return NAN;
+    return (-a*x-c)/b;
+  }
+};
 
 class ColoredLineDetector : public jevois::Module,
   public jevois::Parameter<x_sensor_count, y_sensor_count, sensor_algorithm>
@@ -88,7 +119,7 @@ class ColoredLineDetector : public jevois::Module,
       //cv::Sobel( gray, grad_x, ddepth, 1, 0, 3, scale, delta, cv::BORDER_REFLECT );
 
       // set left 10 pixels to zero, we get boundary effects there, even with borders
-      cv::Mat roi = grad_x(cv::Rect(0, 0, 10,grad_x.size().height));
+      cv::Mat roi = grad_x(cv::Rect(0, 0, 10, grad_x.size().height));
       roi.setTo(0);
 
       double min_grad, max_grad;
@@ -114,19 +145,41 @@ class ColoredLineDetector : public jevois::Module,
       // try to find lines and draw in RGB
 
       // using contours and fitEllipse
+      cv::RotatedRect best_ellipse;
+      best_ellipse.size.width = 0;
       vector<vector<cv::Point> > contours;
       cv::findContours(left, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE,cv::Point(0,0));
       for(auto contour:contours) {
         if(contour.size() < 5) continue;
         cv::RotatedRect ellipse = cv::fitEllipse(contour);
-        cv::Scalar color;
-        color = cv::Scalar(255,255,25);
-        cv::ellipse(merged,ellipse,color);
-        stringstream label;
-        label << std::setprecision(3) << ellipse.angle << " degs";
-        cv::putText(merged, label.str().c_str(), ellipse.center,cv::FONT_HERSHEY_SIMPLEX, 0.5, color, 1 );
+
+        // save best ellipse
+        if(ellipse.size.height > best_ellipse.size.height) {
+          best_ellipse = ellipse;
+        }
       }
 
+      cv::Scalar color;
+      color = cv::Scalar(255,255,25);
+      cv::ellipse(merged, best_ellipse, color);
+      stringstream label;
+      cv::putText(merged, label.str().c_str(), best_ellipse.center,cv::FONT_HERSHEY_SIMPLEX, 0.5, color, 1 );
+
+      // find x intercept
+      if(best_ellipse.size.width > 0) {
+
+        cv::Point2f p1,p2;
+        get_major_axis_segment(best_ellipse, &p1, &p2);
+        Line line(p1, p2);
+
+        int bottom = merged.size().height;
+        double x_intercept = line.x(bottom);
+        cv::line(merged, p1, p2, cv::Scalar(255,255,255));
+        cv::line(merged, cv::Point(x_intercept,bottom), cv::Point(x_intercept,bottom/2), cv::Scalar(0,255,255),2);
+
+
+
+      }
       //(x,y),(MA,ma),angle = cv2.fitEllipse(cnt)
 
       //jevois::rawimage::pasteGreyToYUYV(right,visual,0,0);
