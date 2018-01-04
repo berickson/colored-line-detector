@@ -144,43 +144,42 @@ class ColoredLineDetector : public jevois::Module,
 
       // try to find lines and draw in RGB
 
-      // using contours and fitEllipse
-      cv::RotatedRect best_ellipse;
-      best_ellipse.size.width = 0;
-      vector<vector<cv::Point> > contours;
-      cv::findContours(left, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE,cv::Point(0,0));
-      for(auto contour:contours) {
-        if(contour.size() < 5) continue;
-        cv::RotatedRect ellipse = cv::fitEllipse(contour);
+      for(auto channel:{0,1}) {
 
-        // save best ellipse
-        if(ellipse.size.height > best_ellipse.size.height) {
-          best_ellipse = ellipse;
+        // using contours and fitEllipse
+        cv::RotatedRect best_ellipse;
+        best_ellipse.size.width = 0;
+        vector<vector<cv::Point> > contours;
+        cv::findContours(channels[channel], contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE,cv::Point(0,0));
+        for(auto contour:contours) {
+          if(contour.size() < 5) continue;
+          cv::RotatedRect ellipse = cv::fitEllipse(contour);
+
+          // save best ellipse
+          if(ellipse.size.height > best_ellipse.size.height) {
+            best_ellipse = ellipse;
+          }
+        }
+
+        cv::Scalar color;
+        color = cv::Scalar(255,255,25);
+        cv::ellipse(merged, best_ellipse, color);
+        stringstream label;
+        cv::putText(merged, label.str().c_str(), best_ellipse.center,cv::FONT_HERSHEY_SIMPLEX, 0.5, color, 1 );
+
+        // find x intercept
+        if(best_ellipse.size.width > 0) {
+
+          cv::Point2f p1,p2;
+          get_major_axis_segment(best_ellipse, &p1, &p2);
+          Line line(p1, p2);
+
+          int bottom = merged.size().height;
+          double x_intercept = line.x(bottom);
+          cv::line(merged, p1, p2, cv::Scalar(255,255,255));
+          cv::line(merged, cv::Point(x_intercept,bottom), cv::Point(x_intercept,bottom/2), cv::Scalar(0,255,255),2);
         }
       }
-
-      cv::Scalar color;
-      color = cv::Scalar(255,255,25);
-      cv::ellipse(merged, best_ellipse, color);
-      stringstream label;
-      cv::putText(merged, label.str().c_str(), best_ellipse.center,cv::FONT_HERSHEY_SIMPLEX, 0.5, color, 1 );
-
-      // find x intercept
-      if(best_ellipse.size.width > 0) {
-
-        cv::Point2f p1,p2;
-        get_major_axis_segment(best_ellipse, &p1, &p2);
-        Line line(p1, p2);
-
-        int bottom = merged.size().height;
-        double x_intercept = line.x(bottom);
-        cv::line(merged, p1, p2, cv::Scalar(255,255,255));
-        cv::line(merged, cv::Point(x_intercept,bottom), cv::Point(x_intercept,bottom/2), cv::Scalar(0,255,255),2);
-
-
-
-      }
-      //(x,y),(MA,ma),angle = cv2.fitEllipse(cnt)
 
       //jevois::rawimage::pasteGreyToYUYV(right,visual,0,0);
       jevois::rawimage::pasteRGBtoYUYV(merged,visual,0,0);
