@@ -2,3 +2,5 @@ pbuild/CMakeFiles
 jvpkg/modules
 pbuild
 arduino-build
+schematic/*.bak
+schematic/libraries/teensy*

@@ -1,0 +1,11 @@
+EESchema-DOCLIB  Version 2.0
+#
+$CMP ENCODER_MOTOR
+D SSD1331 SPI OLED 96x64 .95" 65k colors
+$ENDCMP
+#
+$CMP OLED_SSD1331
+D Encoder motor with wheel from E-Bay
+$ENDCMP
+#
+#End Doc Library
