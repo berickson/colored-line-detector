@@ -185,39 +185,7 @@ class ColoredLineDetector : public jevois::Module,
       jevois::rawimage::pasteRGBtoYUYV(merged,visual,0,0);
     }
 
-    // this non-virtual form of process will be called by both virtual process methods
-    // so, visual might not be valid
-    void process(const jevois::RawImage & inimg, jevois::RawImage & visual) {
-
-      if(sensor_algorithm::get() == AlgoEnum::Edges) {
-        process_edges(inimg, visual);
-        return;
-      }
-
-      // Just copy the pixel data over:
-      if(visual.valid()) {
-        memcpy(visual.pixelsw<void>(), inimg.pixels<void>(), std::min(inimg.buf->length(), visual.buf->length()));
-      }
-
-    
-      cv::Mat rgb = jevois::rawimage::convertToCvRGB(inimg);
-      auto image_width = rgb.cols;
-      auto image_height = rgb.rows;
-      auto num_sensors = x_sensor_count::get();
-      auto sensor_spacing = image_width/num_sensors;
-      auto sensor_height = 10;
-      auto sensor_width = 10;
-      stringstream serial_message;
-      serial_message << "cld "; // cld is the message identifier
-      auto sensor_cy = image_height - 20;
-      if(visual.valid()) {
-        // background rect for text
-        jevois::rawimage::drawFilledRect(visual, 0, sensor_cy-20, image_width ,20, jevois::yuyv::DarkGrey);
-      }
-      for(int i =0; i < num_sensors; i++) {
-        // extract sub-image in sensor region
-        auto sensor_cx = sensor_spacing * i + sensor_spacing/2;
-        auto roi = cv::Rect(sensor_cx - sensor_width/2, sensor_cy + sensor_height / 2, sensor_width, sensor_height);
+    char sense_color_at_rect(cv::Rect roi, cv::Mat & rgb, jevois::RawImage & visual) {
         cv::Mat sensor_rgb = rgb(roi);
         //cv::Mat sensor_lab;
         //cv::cvtColor(sensor_rgb, sensor_rgb, cv::COLOR_RGB2Lab);
@@ -228,7 +196,6 @@ class ColoredLineDetector : public jevois::Module,
         auto median_b = median(planes[2],256);
 
         char c =  color_name(median_r, median_g, median_b);
-        serial_message << c;
         if(visual.valid()) {
           stringstream ss;
           ss << c << std::setw(2) << std::setfill('0') << int(100*median_r) 
@@ -240,13 +207,53 @@ class ColoredLineDetector : public jevois::Module,
           } else if (c == 'g') {
             jevois_c = jevois::yuyv::MedGreen;
           } else if (c == 'b') {
-            jevois_c = jevois::yuyv::DarkTeal;
+            jevois_c = jevois::yuyv::DarkPurple;
           } else if (c =='k') {
             jevois_c = jevois::yuyv::Black;
           }
           const int thickness = 3;
-          jevois::rawimage::writeText(visual, ss.str().c_str(), i*sensor_spacing, roi.y-18, jevois::yuyv::White, jevois::rawimage::Font6x10);
+          jevois::rawimage::writeText(visual, ss.str().c_str(), roi.x, roi.y-18, jevois::yuyv::White, jevois::rawimage::Font6x10);
           jevois::rawimage::drawRect(visual, roi.x-thickness, roi.y-thickness, roi.width+thickness*2, roi.height+thickness*2, thickness, jevois_c);
+        }
+      return c;
+    }
+
+    void process_virtual_sensors(const jevois::RawImage & inimg, jevois::RawImage & visual) {
+      // Just copy the pixel data over:
+      if(visual.valid()) {
+        memcpy(visual.pixelsw<void>(), inimg.pixels<void>(), std::min(inimg.buf->length(), visual.buf->length()));
+      }
+
+      cv::Mat rgb = jevois::rawimage::convertToCvRGB(inimg);
+      auto image_width = rgb.cols;
+      auto image_height = rgb.rows;
+      auto num_sensors_x = x_sensor_count::get();
+      auto num_sensors_y = y_sensor_count::get();
+      auto sensor_x_spacing = image_width/num_sensors_x;
+      auto sensor_y_spacing = image_height/num_sensors_y;
+      auto sensor_height = 10;
+      auto sensor_width = 10;
+      stringstream serial_message;
+      serial_message << "cld "; // cld is the message identifier
+      auto sensor_cy = image_height - 20;
+      if(visual.valid()) {
+        // background rect for text
+        jevois::rawimage::drawFilledRect(visual, 0, sensor_cy-20, image_width ,20, jevois::yuyv::DarkGrey);
+      }
+      for(int i =0; i < num_sensors_x; i++) {
+        // extract sub-image in sensor region
+        auto sensor_cx = sensor_x_spacing * i + sensor_x_spacing/2;
+        auto roi = cv::Rect(sensor_cx - sensor_width/2, sensor_cy + sensor_height / 2, sensor_width, sensor_height);
+        serial_message << sense_color_at_rect(roi, rgb, visual);
+      }
+      
+      for(int col : {0,num_sensors_x-1}) {
+        serial_message << " ";
+        for(int row = 0; row < num_sensors_y; row++) {
+          auto sensor_cx = sensor_x_spacing * col + sensor_x_spacing/2;
+          sensor_cy = image_height - (sensor_y_spacing * row + sensor_y_spacing/2);
+          auto roi = cv::Rect(sensor_cx - sensor_width/2, sensor_cy - sensor_height / 2, sensor_width, sensor_height);
+          serial_message << sense_color_at_rect(roi, rgb, visual);
         }
       }
       if(visual.valid()) {
@@ -257,6 +264,17 @@ class ColoredLineDetector : public jevois::Module,
       }
       // Send detected colors over usb
       sendSerial(serial_message.str());
+    }
+
+    // this non-virtual form of process will be called by both virtual process methods
+    // so, visual might not be valid
+    void process(const jevois::RawImage & inimg, jevois::RawImage & visual) {
+
+      if(sensor_algorithm::get() == AlgoEnum::Edges) {
+        process_edges(inimg, visual);
+        return;
+      }
+      process_virtual_sensors(inimg, visual);
 
     }
 
@@ -296,3 +314,4 @@ class ColoredLineDetector : public jevois::Module,
 
 // Allow the module to be loaded as a shared object (.so) file:
 JEVOIS_REGISTER_MODULE(ColoredLineDetector);
+
