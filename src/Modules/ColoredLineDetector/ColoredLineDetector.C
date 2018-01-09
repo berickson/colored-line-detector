@@ -54,7 +54,7 @@ return medianVal/nVals; }
 JEVOIS_DEFINE_ENUM_CLASS(AlgoEnum, (Sensors) (Edges) );
 
 JEVOIS_DECLARE_PARAMETER(sensor_algorithm, AlgoEnum, "Algorithm class to use",
-                          AlgoEnum::Edges, AlgoEnum_Values, ParamCateg);
+                          AlgoEnum::Sensors, AlgoEnum_Values, ParamCateg);
 JEVOIS_DECLARE_PARAMETER(x_sensor_count, int, "Number of sensors horizontally", 7, jevois::Range<int>(1, 100), ParamCateg);
 JEVOIS_DECLARE_PARAMETER(y_sensor_count, int, "Number of horizontal sensors along edges", 15, jevois::Range<int>(1, 100), ParamCateg);
 
