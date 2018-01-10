@@ -75,7 +75,7 @@ REncoderB
 Text GLabel 2500 6100 1    60   Input ~ 0
 GND
 Text GLabel 2600 6100 1    60   Input ~ 0
-5V
+3V3
 Text GLabel 2700 6100 1    60   Input ~ 0
 OLED_SCK
 Text GLabel 2800 6100 1    60   Input ~ 0
