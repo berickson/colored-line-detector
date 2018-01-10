@@ -62,12 +62,12 @@ void setup(void) {
 
   Serial.println("init");
   uint16_t time = millis();
-  //for(;;) {
   display.fillScreen(BLACK);
   display.fillScreen(WHITE);
-  //}
+  
   time = millis() - time;
   
+  for(;;) {
   Serial.println(time, DEC);
   time = millis();
   pause();
@@ -113,16 +113,15 @@ void setup(void) {
   testtriangles();
   pause();
 
-  for(int i=0;i<100;i++) {
-    drawTile(0,0);
-    drawTile(50,0);
-  }
+  drawTile(0,0);
+  drawTile(50,0);
   
   Serial.println("done");
   pause();
   time = millis() - time;
   
   Serial.println(time, DEC);
+  }
 }
 
 void drawTile(uint8_t x, uint8_t y) {

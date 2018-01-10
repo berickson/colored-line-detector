@@ -1,774 +1,183 @@
-/*
-Board:      Arduino Uno
-Programmer: USB Asp
-*/
+#define pin_oled_sclk 13
+#define pin_oled_mosi 11
+#define pin_oled_cs   10
+#define pin_oled_rst  9
+#define pin_oled_dc   8
 
-#include <IRremote.h>
-#include <Servo.h>
-#include <FlexiTimer2.h>
-#include<SoftwareSerial.h>
+
 #include <SerialCommands.h> // see https://github.com/ppedro74/Arduino-SerialCommands
 
 
-#include "math.h"
 
-const int pin_mcu_int = 2;
-const int pin_mcc_enb = 3;
-const int pin_mcc_in4 = 4;
-const int pin_mcc_in3 = 5;
-const int pin_mcc_in2 = 6;
-const int pin_mcc_in1 = 7;
-const int pin_mcc_ena = 8;
+#include <Adafruit_GFX.h>
+#include "Adafruit_SSD1331.h"
+#include <SPI.h>
 
-const int pin_ping_echo = 9;
-const int pin_ping_trig = 10;
+// Color definitions
+#define BLACK           0x0000
+//                        aaaaabbbbbbccccc
+#define GRAY            0b0010000100000100
+#define BLUE            0x001F
+#define RED             0xF800
+#define GREEN           0x07E0
+#define CYAN            0x07FF
+#define MAGENTA         0xF81F
+#define YELLOW          0xFFE0  
+#define WHITE           0xFFFF
 
-const int pin_servo = 11;
-const int pin_servo2 = 12;
-
-const int pin_ir_rx = 13;
-
-const int pin_left_motor_enable = pin_mcc_ena;
-const int pin_right_motor_enable = pin_mcc_enb;
-const int pin_left_forward = pin_mcc_in2;
-const int pin_left_reverse = pin_mcc_in1;
-const int pin_right_forward = pin_mcc_in4;
-const int pin_right_reverse = pin_mcc_in3;
+const int display_width = 96;
+const int display_height = 64;
 
 
-const int pin_bluetooth_tx = A3;
-const int pin_bluetooth_rx = A4;
-
-const int pin_right_encoder = A5;
-const int pin_left_encoder = A0;
 
 
-// globals
+Adafruit_SSD1331 display = Adafruit_SSD1331(pin_oled_cs, pin_oled_dc, pin_oled_rst);
+
+float p = 3.1415926;
+const int t_delay=0;
+
 
 // buffer must be big enough for command, arguments, terminiators and null
 char serial_command_buffer_[100];
-SerialCommands serial_commands_(&Serial, serial_command_buffer_, sizeof(serial_command_buffer_), "\r\n", " ");
-
-Servo servo;
-Servo servo2;
-IRrecv ir_rx(pin_ir_rx);
-decode_results ir_results;
-SoftwareSerial bluetooth(pin_bluetooth_tx, pin_bluetooth_rx); 
-
-int speed = 10; // 0-10
-int desired_heading = 0;
-char heading_command = 'S'; // stop all
-unsigned long last_loop_ms = 0;
-unsigned long last_ping_start_ms = 0;
-
-bool front_lights_on = false;
-bool back_lights_on = false;
-bool horn_on = false;
-bool extra_on = false;
-
-volatile unsigned long right_encoder_count;
-volatile unsigned long left_encoder_count;
-volatile int right_encoder_value;
-volatile int left_encoder_value;
+SerialCommands serial_commands(&Serial1, serial_command_buffer_, sizeof(serial_command_buffer_), (char *)"\r\n", (char *)" ");
 
 
-// infrared receiver
-decode_results results;
 
-enum mode_enum {
-  mode_manual,
-  mode_follow_closest,
-  mode_go_to_wall,
-  mode_back_and_forth,
-  mode_follow_wall,
-  mode_follow_colors
-} mode;
-
-
-void set_speed(int new_speed) {
-  speed = constrain(new_speed,0,10); // 0-10 speed will be used in timer function to throttle speed
-}
-
-void timer_interrupt_handler() {
-  int new_right_encoder_value = digitalRead(pin_right_encoder);
-  if(right_encoder_value != new_right_encoder_value) {
-    right_encoder_count++;
-    right_encoder_value = new_right_encoder_value;
+void on_colors_sensed(SerialCommands * sender) {
+  char * bottom = sender->Next();
+  if(bottom == NULL) {
+    // invalid colors
+    return;
   }
-  int new_left_encoder_value = digitalRead(pin_left_encoder);
-  if(left_encoder_value != new_left_encoder_value) {
-    left_encoder_count++;
-    left_encoder_value = new_left_encoder_value;
+  char * left = sender->Next();
+  if(left== NULL) {
+    // invalid colors
+    return;
   }
-  int error = right_encoder_count - left_encoder_count * 0.98; // adjust for different wheel sizes
-  if(error > 2) {
-    mcc_high(pin_mcc_ena);
-    mcc_low(pin_mcc_enb);
-  } else if (error < -2 ) {
-    mcc_low(pin_mcc_ena);
-    mcc_high(pin_mcc_enb);
-  } else if(millis() % 10 > speed) {
-    mcc_low(pin_mcc_ena);
-    mcc_low(pin_mcc_enb);
-  } else {
-    mcc_high(pin_mcc_ena);
-    mcc_high(pin_mcc_enb);
+  char * right = sender->Next();
+  if(right== NULL) {
+    // invalid colors
+    return;
   }
- 
+  show_goalpost(bottom, left, right);
 }
-
-
-// these functions set digital high and low for MCCC
-// this is special because of the MCC pullup resistors
-// that wants high impedance to set a TRUE value
-void mcc_high(int pin) {
-  pinMode(pin, INPUT);
-}
-
-void mcc_low(int pin) {
-  pinMode(pin, OUTPUT);
-  digitalWrite(pin, LOW);
-}
-
-SerialCommand cmd_colors_sensed("cld",on_colors_sensed);
-
-void setup() {
-  mcc_high(pin_mcc_ena);
-  mcc_high(pin_mcc_enb);
-  mcc_high(pin_mcc_in1);
-  mcc_high(pin_mcc_in2);
-  mcc_high(pin_mcc_in3);
-  mcc_high(pin_mcc_in4);
-
-  Serial.begin(115200);
-  serial_commands_.SetDefaultHandler(on_unrecognized);
-  serial_commands_.AddCommand(&cmd_colors_sensed);
-  
-  bluetooth.begin(9600);
-
-  
-  pinMode(pin_ping_trig, OUTPUT);
-  pinMode(pin_ping_echo, INPUT);
-
-  set_speed(10);
-  
-  servo.attach(pin_servo);
-  servo2.attach(pin_servo2);
-  
-  const int timer_us = 1000;
-  //FlexiTimer2::set(1, timer_interrupt_handler); // 1ms period
-  //FlexiTimer2::start();
-  servo_forward();
-  set_servo2_angle(0);
-  
-
-  // ir_rx.enableIRIn(); // Start the receiver
-  mode = mode_follow_colors;
-
-  pinMode(pin_right_motor_enable,OUTPUT); 
-  pinMode(pin_left_motor_enable,OUTPUT); 
-
-  digitalWrite(pin_left_motor_enable,0);
-  digitalWrite(pin_right_motor_enable,0);
-  
-  pinMode(pin_left_forward,OUTPUT);
-  pinMode(pin_left_reverse,OUTPUT);
-  pinMode(pin_right_forward,OUTPUT);
-  pinMode(pin_right_reverse,OUTPUT);
-
-  digitalWrite(pin_left_forward,0);
-  digitalWrite(pin_left_reverse,0);
-  digitalWrite(pin_right_forward,0);
-  digitalWrite(pin_right_reverse,0);
-
-}
-
-// set servo to angle, zero is center, negative is ccw, range is -60 to 60
-void set_servo_angle(int degrees) {
-  const int center = 1350;
-  const int range = 900; // range from center to extreme
-
-  servo.writeMicroseconds(
-    center + range* degrees / 90);
-}
-
-// set servo to angle, zero is center, negative is down, range is -60 to 60
-void set_servo2_angle(int degrees) {
-  const int center = 1350;
-  const int range = 900; // range from center to extreme
-
-  servo2.writeMicroseconds(
-    center + range* degrees / 90);
-}
-
-
-void trace(String s) {
-  Serial.println(s);
-}
-
-void trace(double d) {
-  trace(String(d));
-}
-
-void servo_forward() {
-  set_servo_angle(0);
-}
-
-void servo_left() {
-  set_servo_angle(45);
-}
-
-void servo_right() {
-   set_servo_angle(-45);
-}
-
-
-double ping_distance() {
-   // wait for previous ping to settle
-   const unsigned long min_time_between_pings_ms = 30;
-   while(millis() - last_ping_start_ms < min_time_between_pings_ms) {
-     delay(1);
-   }
-   last_ping_start_ms = millis();
-   digitalWrite(pin_ping_trig, LOW);
-   delayMicroseconds(2);
-   digitalWrite(pin_ping_trig, HIGH);
-   delayMicroseconds(10);
-   digitalWrite(pin_ping_trig, LOW);
-   unsigned long timeout_us = 20000;
-   double duration = pulseIn(pin_ping_echo, HIGH, timeout_us);
-   double distance = (duration/2) / 29.1/2.54;
-   trace((String)"ping distance: "+distance);
-   
-   // see post #16 at http://forum.arduino.cc/index.php?topic=55119.15
-   if(distance == 0) {
-      pinMode(pin_ping_echo, OUTPUT);
-      digitalWrite(pin_ping_echo, LOW);
-      delay(10);
-      pinMode(pin_ping_echo, INPUT);
-   }
-   
-   return distance;
-}
-
-void go_to_wall() {
-  set_servo_angle(0);
-  delay(20); 
-  double distance = ping_distance();
-  
-  if (distance>18) { 
-    forward();
-  } else if (distance<16 && distance > 0) {  
-    reverse();
-  }
-  else {
-    coast();
-  }
-}
-
-
-void follow_wall() {
-  const int goal_distance = 5.0;
-  set_servo_angle(-90);
-  delay(1000);
-  double ds = 3;
-  double gap = ping_distance();
-  for(int i = 0; i < 10; i++) {
-    go_inches(ds);
-    delay(1000);
-    double new_gap = ping_distance();
-    double goal_theta = constrain(10 * (goal_distance-new_gap), -30,30);
-    double drift = new_gap-gap;
-    double theta = constrain(-asin(drift/ds)*180./PI,-30,30);
-    trace((String) "gap: "+ gap + " new gap: " + new_gap + " drift: " + drift +"  theta: "+theta +"  goal_theta: "+goal_theta );
-    turn_angle(constrain(goal_theta-theta,-30,30));
-    gap = ping_distance();
-    delay(1000);
-  }
-}
-
-void turn_angle(double angle) {
-  int goal_ticks = right_encoder_count + left_encoder_count + abs(angle) * 0.45;
-
-  if(angle > 0)
-    turn_left();
-  if(angle < 0)
-    turn_right();
-
-  while(left_encoder_count + right_encoder_count < goal_ticks) {
-    delay(1);
-  }
-  stop();
-  delay(100);
-  coast();
-}
-
-
-bool scan_for_closest(double * min_angle, double * min_distance) {
-  trace("scanning for closest");
-  bool found = false;
-  set_servo_angle(90);
-  delay(300);
-  for(double angle = 90; angle >= -90; angle -=15) {
-    set_servo_angle(angle);
-    delay(300); // going much faster messes with the ping results
-    double distance = ping_distance();
-    if((!found || (distance < *min_distance)) && distance > 0) {
-      found = true;
-      *min_distance = distance;
-      *min_angle = angle;
-    }
-  }
-  if(found) {
-    trace((String)"min_angle: " + *min_angle + "min_distance: " + *min_distance);
-  }
-  return found;
-}
-
-void go_inches(double inches) {
-  go_ticks(inches * 5.52); 
-}
-
-void go_ticks(int ticks) {
-  int original_ticks = right_encoder_count;
-  if(ticks >= 0) {
-    forward();
-  } else {
-    reverse();
-  }
-  while(abs(right_encoder_count - original_ticks) < abs(ticks)) {
-    delay(1);
-  }
-  stop();
-}
-
-void set_motor_speeds(int left_percent, int right_percent) {
-  const int max_speed = 200;
-
-  // digital write goes to 255
-  int left_motor_speed = map(left_percent, -100, 100, -max_speed, max_speed);
-  left_motor_speed = constrain(left_motor_speed,-max_speed, max_speed);
-  int right_motor_speed = map(right_percent, -100, 100, -max_speed, max_speed);
-  right_motor_speed = constrain(right_motor_speed,-max_speed,max_speed);
-
-  trace((String)"l%: " + left_percent+" lv: " + left_motor_speed+" r%: " + right_percent+" rv: " + right_motor_speed);
-
-  // set directions
-  digitalWrite(pin_left_forward, left_percent >= 0);
-  digitalWrite(pin_left_reverse, left_percent < 0);
-
-  digitalWrite(pin_right_forward, right_percent >= 0);
-  digitalWrite(pin_right_reverse, right_percent < 0);
-  
-  // set speeds
-  analogWrite(pin_left_motor_enable,abs(left_motor_speed));
-  analogWrite(pin_right_motor_enable,abs(right_motor_speed));
-}
-
-void follow_colors() {
-}
-
-void follow_closest() {
-  coast();
-  double angle = 0;
-  double distance = 0;
-  double desired_distance = 5; // inches
-  if(scan_for_closest(&angle, &distance)) {
-    set_servo_angle(angle);
-    turn_angle(angle);
-    set_servo_angle(0);
-    go_inches(constrain(distance-desired_distance,-10,10));
-  }
-}
-
-
-void turn_left() {
-  //servo_left();
-  mcc_low(pin_left_forward);
-  mcc_high(pin_left_reverse);
-  mcc_high(pin_right_forward);
-  mcc_low(pin_right_reverse);
-}
-
-void turn_right() {
-  //servo_right();
-  mcc_high(pin_left_forward);
-  mcc_low(pin_left_reverse);
-  mcc_low(pin_right_forward);
-  mcc_high(pin_right_reverse);
-}
-
-
-void forward() {
-  const double heading_tolerance = 3;
-  //servo_forward();
-  double heading_error = 0;
-
-  mcc_high(pin_left_forward);
-  mcc_low(pin_left_reverse);
-
-  mcc_high(pin_right_forward);
-  mcc_low(pin_right_reverse);
-}
-
-void reverse() {
-  mcc_low(pin_left_forward);
-  mcc_high(pin_left_reverse);
-  mcc_low(pin_right_forward);
-  mcc_high(pin_right_reverse);
-}
-
-
-void stop() {
-  mcc_high(pin_left_forward);
-  mcc_high(pin_left_reverse);
-  mcc_high(pin_right_forward);
-  mcc_high(pin_right_reverse);
-}
-
-void coast() {
-  mcc_low(pin_left_forward);
-  mcc_low(pin_left_reverse);
-  mcc_low(pin_right_forward);
-  mcc_low(pin_right_reverse);
-}
-
-
-void read_remote_control() {
-  if (bluetooth.available() > 0) {
-    int key = bluetooth.read();
-    switch(key) {
-      case 'F':       // forward
-        heading_command = key;
-        mode = mode_manual;
-        break;
-      case 'B':       // back
-        heading_command = key;
-        mode = mode_manual;
-        break;
-      case 'L':       // left
-      case 'G':       // forward left
-      case 'H':       // back left
-        heading_command = key;
-        mode = mode_manual;
-        break;
-      case 'R':       // right
-      case 'I':       // forward right
-      case 'J':       // back right
-        heading_command = key;
-        mode = mode_manual;
-        break;
-      case 'S':       // stop
-      case 'D':       // stop all
-        heading_command = key;
-        mode = mode_manual;
-        stop();
-        break;
-      case '0':  // speeds, 0% - 90%
-        set_speed(0);
-        break;
-      case '1':
-        set_speed(1);
-        break;
-      case '2':
-        set_speed(2);
-        break;
-      case '3':
-        set_speed(3);
-        break;
-      case '4':
-        set_speed(4);
-        break;
-      case '5':
-        set_speed(5);
-        break;
-      case '6':
-        set_speed(6);
-        break;
-      case '7':
-        set_speed(7);
-        break;
-      case '8':
-        set_speed(8);
-        break;
-      case '9':
-        set_speed(9);
-        break;
-      case 'q': 
-        set_speed(10);
-        break;
-      case 'W':
-        front_lights_on = true;
-        mode = mode_follow_closest;
-        break;
-      case 'w':
-        front_lights_on = false;
-        mode = mode_manual;
-        break;
-      case 'U':
-        back_lights_on = true;
-        mode = mode_go_to_wall;
-        break;
-      case 'u':
-        back_lights_on = false;
-        mode = mode_manual;
-        break;
-      case 'V':
-        horn_on = true;
-        mode = mode_back_and_forth;
-        break;
-      case 'v':
-        horn_on = false;
-        mode = mode_manual;
-        break;
-      case 'X':
-        mode = mode_follow_wall;
-        extra_on = true;
-        break;
-      case 'x':
-        extra_on = false;
-        mode = mode_manual;
-        break;
-      default:
-        break;
-    }
-  }
-}
-
-void follow_remote_control_commands() {
-  
-  switch(heading_command) {
-    case 'F':       // forward
-      forward();
-      break;
-    case 'B':       // back
-      reverse();
-      break;
-    case 'L':       // left
-    case 'G':       // forward left
-    case 'H':       // back left
-      turn_left();
-      break;
-    case 'R':       // right
-    case 'I':       // forward right
-    case 'J':       // back right
-      turn_right();
-      break;
-    case 'S':       // stop
-    case 'D':       // stop all
-      stop();
-      break;
-  }
-}
-
-void read_ir_remote_control() {
-  if (ir_rx.decode(&results)) {
-    if (results.decode_type == NEC) {
-      trace("NEC: ");
-    } else if (results.decode_type == SONY) {
-      trace("SONY: ");
-    } else if (results.decode_type == RC5) {
-      trace("RC5: ");
-    } else if (results.decode_type == RC6) {
-      trace("RC6: ");
-    } else if (results.decode_type == UNKNOWN) {
-      trace("UNKNOWN: ");
-    }
-//    trace(results.value, HEX);
-    switch(results.value){
-         // "special for mp3" remote control
-
-        case 0xFFA25D: // power
-          mode = mode_manual;
-          heading_command = 'S';
-          break;
-        case 0xFF629D: // mode
-          mode = mode_follow_closest;
-          break;
-        case 0xFFE21D: // mute
-          mode = mode_go_to_wall;
-          break;
-        case 0xFF22DD: // play/stop button
-          if(heading_command == 'F') {
-            heading_command = 'S';
-          } else {
-            heading_command = 'F';
-          }
-          break;
-        case 0xFF02FD: //  previous track
-          if(heading_command == 'L') {
-            heading_command = 'S';
-          } else {
-            heading_command = 'L';
-          }
-          break;
-        case 0xFFC23D: // next track
-          if(heading_command == 'R') {
-            heading_command = 'S';
-          } else {
-            heading_command = 'R';
-          }
-          break;
-        case 0xFFE01F: // eq
-          if(heading_command == 'B') {
-            heading_command = 'S';
-          } else {
-            heading_command = 'B';
-          }
-          break;
-        case 0xFFA857: // -
-          break;
-        case 0xFF906F: // +
-          break;
-        case 0xFF6897: // 0
-          break;
-        case 0xFF9867: // shuffle?
-          break;
-        case 0xFFB04F: // U/SD
-          break;
-        case 0xFF30CF: // 1
-          break;
-        case 0xFF18E7: // 2
-          break;
-        case 0xFF7A85: // 3
-          break;
-        //case 0x: // 4 doesn't work
-        //  break;
-        case 0xFF38C7: // 5
-          break;
-        case 0xFF5AA5: // 6
-          break;
-        case 0xFF42BD: // 7
-          break;
-        case 0xFF4AB5: // 8
-          break;
-        case 0xFF52AD: // 9
-          break;
-        case 0xFFFFFFFF: // repeat
-          break;
-          
-        default:
-          break;
-    }
-    
-    ir_rx.resume(); // Receive the next value
-  }
-  //read_remote_control();
-
-}
-
-
-void go_back_and_forth() {
-    go_inches(12);
-    delay(3000);
-    turn_angle(-90);
-    delay(3000);
-    turn_angle(180);
-    delay(3000);
-    turn_angle(-90);
-    delay(3000);
-    go_inches(-12);
-    delay(3000);
-}
-
 
 //This is the default handler, and gets called when no other command matches. 
 void on_unrecognized(SerialCommands* sender, const char* cmd)
 {
 }
 
-void on_colors_sensed(SerialCommands * sender) {
-  char * colors = sender->Next();
-  if(colors == NULL) {
-    // invalid colors
-    return;
+
+uint16_t sensor_color(char c) {
+  switch(c) {
+    case 'r':
+      return RED;
+    case 'g':
+      return GREEN;
+    case 'b':
+      return BLUE;
+    case 'k':
+      return BLACK;
+    default:
+      return WHITE;
   }
-  char i = 0;
-  char first_color_index = -1;
-  char last_color_index = -1;
-  int length = 0;
-  for(char* color=colors, i=0; *color; ++color, ++i) {
-    length++;
-    if(*color != '.') {
-      last_color_index = i;
-      if(first_color_index == -1) {
-        first_color_index = i;
-      }
+}
+
+void show_goalpost(const char * bottom, const char * left, const char * right) {
+  char n_bottom = strlen(bottom);
+  char n_left= strlen(left);
+  char n_right = strlen(right);
+  
+
+  for(int i=0;i<n_bottom;++i) {
+    const int sensor_size = 8;
+    display.fillRect(10*i + 15,display_height-sensor_size,sensor_size,sensor_size,sensor_color(bottom[i]));
+  }
+
+  for(int i=0;i<n_left;++i) {
+    const int sensor_width = 8;
+    const int sensor_height = 3;
+    const int gap = 1;
+    display.fillRect(
+      0, 
+      display_height-sensor_height-i * (sensor_height + gap), 
+      sensor_width, 
+      sensor_height,
+      sensor_color(left[i]));
+  }
+
+  for(int i=0;i<n_right;++i) {
+    const int sensor_width = 8;
+    const int sensor_height = 3;
+    const int gap = 1;
+    display.fillRect(
+      display_width - sensor_width,
+      display_height-sensor_height-i * (sensor_height + gap), 
+      sensor_width, 
+      sensor_height,
+      sensor_color(right[i]));
+  }
+
+  
+}
+
+
+void pause() {
+  delay(0);
+}
+
+SerialCommand cmd_colors_sensed("cld",on_colors_sensed);
+
+void setup(void) {
+  Serial1.begin(115200);
+  display.begin();
+  display.fillScreen(GRAY);
+  serial_commands.SetDefaultHandler(on_unrecognized);
+  serial_commands.AddCommand(&cmd_colors_sensed);
+  
+}
+
+void drawTile(uint8_t x, uint8_t y) {
+  display.fillRect(x+0,y+0,45,45,WHITE);
+  display.fillRect(x+0,y+20,20,5,GREEN);
+  display.fillRect(x+20,y+0,5,20,RED);
+  display.fillRect(x+20,y+25,5,20,BLACK);
+  display.fillRect(x+25,y+20,20,5,BLUE);
+}
+
+class LoopChecker {
+  public:
+
+    // execute run on the top of every loop
+    void run() {
+        last_loop_ms = loop_ms;
+        loop_ms = millis();
+        ++loop_count;
     }
-  }
-
-  Serial.println((String) colors + " first_color_index:" + (int)first_color_index + " last_color_index:" + (int)last_color_index + " length:" + (int)length);
-
-  // set line position if we see one
-  if(first_color_index != -1) {
-    // calculate line position in range [-100,100]
-    int line_position = map(first_color_index + last_color_index,0,2*(length-1),-100,100);
-
-    int left_percent = constrain(map(line_position, 0, -100, 100, -100), -100, 100);
-    int right_percent = constrain(map(line_position, 0, 100, 100, -100), -100, 100);
-    set_motor_speeds(left_percent, right_percent);
-  }
-}
+    // returns true if loop time passes through n ms boundary
+    bool every_n_ms(unsigned long ms) {
+        return last_loop_ms && (last_loop_ms % ms) + (loop_ms - last_loop_ms) >= ms;
+    }
+    unsigned long loop_ms = 0;
+    unsigned long last_loop_ms = 0;
+    unsigned long loop_count = 0;
+};
+LoopChecker loop_checker;
 
 
-// returns true if loop time passes through n ms boundary
-bool every_n_ms(unsigned long last_loop_ms, unsigned long loop_ms, unsigned long ms) {
-  return (last_loop_ms % ms) + (loop_ms - last_loop_ms) >= ms;
-}
-int last_reported_right_encoder_count = 0;
-int last_reported_left_encoder_count = 0;
 void loop() {
-  serial_commands_.ReadSerial();
-  //follow_colors();
-  return;
-  unsigned long loop_ms = millis();
-  bool every_second = every_n_ms(last_loop_ms, loop_ms, 1000);
-  bool every_100_ms = every_n_ms(last_loop_ms, loop_ms, 100);
-  bool every_10_ms = every_n_ms(last_loop_ms, loop_ms, 10);
+  loop_checker.run();
+  serial_commands.ReadSerial();
+  bool second_boundary = loop_checker.every_n_ms(1000);
 
-
-  if(every_10_ms) {
-    //read_remote_control();
-    //read_ir_remote_control();
-    switch(mode) {
-      case mode_manual:
-        follow_remote_control_commands();
-        break;
-      case mode_follow_closest:
-        follow_closest();
-        break;
-      case mode_go_to_wall:
-        go_to_wall();
-        break;
-      case mode_back_and_forth:
-        go_back_and_forth();
-        break;
-      case mode_follow_wall:
-        follow_wall();
-        break;
-      case mode_follow_colors:
-        follow_colors();
-        break;
-      default:
-        Serial.print("error: invalid mode");
-        break;
-    }
+/*
+  if(second_boundary) {
+    drawTile(0,0);
+    drawTile(50,0);
   }
-  if(every_second) {
-    trace("ping: ");
-    trace(ping_distance());
-    trace("right: ");
-    trace(right_encoder_count);
-    trace(", ");
-    trace(right_encoder_count - last_reported_right_encoder_count);
-    last_reported_right_encoder_count = right_encoder_count;
-    trace("  left: ");
-    trace(left_encoder_count);
-    trace(", ");
-    trace(left_encoder_count - last_reported_left_encoder_count);
-    last_reported_left_encoder_count = left_encoder_count;
+*/
+  if(second_boundary) {
+    Serial.println((String)"Loop count: " + loop_checker.loop_count);
   }
-
-
-  last_loop_ms = loop_ms;
 }
+
