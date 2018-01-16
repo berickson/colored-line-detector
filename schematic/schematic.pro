@@ -1,4 +1,4 @@
-update=Fri 05 Jan 2018 09:34:47 AM PST
+update=Sat 13 Jan 2018 08:19:49 AM PST
 version=1
 last_client=kicad
 [pcbnew]
@@ -63,3 +63,13 @@ LibName31=contrib
 LibName32=valves
 LibName33=libraries/teensy_library-master/teensy
 LibName34=libraries/brian_erickson/brian_erickson
+[schematic_editor]
+version=1
+PageLayoutDescrFile=
+PlotDirectoryName=
+SubpartIdSeparator=0
+SubpartFirstId=65
+NetFmtName=
+SpiceForceRefPrefix=0
+SpiceUseNetNumbers=0
+LabSize=60

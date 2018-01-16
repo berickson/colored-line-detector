@@ -1,0 +1,24 @@
+* /home/brian/colored-line-detector/schematic/schematic.cir
+
+* EESchema Netlist Version 1.1 (Spice format) creation date: Sat 13 Jan 2018 08:31:27 AM PST
+
+* To exclude a component from the Spice Netlist add [Spice_Netlist_Enabled] user FIELD set to: N
+* To reorder the component spice node sequence add [Spice_Node_Sequence] user FIELD and define sequence: 2,1,0
+
+* Sheet Name: /
+L_MTR1  LMotor- GND 3V3 LEncoderA LEncoderB LMotor+ ENCODER_MOTOR		
+R_MTR1  RMotor- GND 3V3 REncoderA REncoderB LMotor+ ENCODER_MOTOR		
+OLED1  GND OLED_SSD1331		
+CAM1  GND JEVOIS		
+MCC1  R_FWD MOTOR_CONTROLLER_WANGDD22		
+PS1  GND 5V_UBEC		
+B1  BALANCE_GND 3S_LIPO		
+U2  BALANCE_GND BALANCE_ALARM		
+SW1  Net-_PS1-Pad~_ BAT+ SW_DIP_x01		
+R1  Net-_PS1-Pad~_ Net-_R1-Pad2_ 400k		
+R2  Net-_R1-Pad2_ GND 100k		
+CSENSE1  GND W4953-A-COLOR-SENSOR		
+CSENSE2  GND W4953-A-COLOR-SENSOR		
+U1  Net-_R1-Pad2_ Teensy3.5_outer_pins		
+
+.end

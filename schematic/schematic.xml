@@ -1,0 +1,472 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<export version="D">
+  <design>
+    <source>/home/brian/colored-line-detector/schematic/schematic.sch</source>
+    <date>Sat 13 Jan 2018 08:30:53 AM PST</date>
+    <tool>Eeschema 4.0.7-e2-6376~58~ubuntu16.04.1</tool>
+    <sheet number="1" name="/" tstamps="/">
+      <title_block>
+        <title>Colored Line Following Robot</title>
+        <company>Brian Erickson</company>
+        <rev>0</rev>
+        <date/>
+        <source>schematic.sch</source>
+        <comment number="1" value="comment 1"/>
+        <comment number="2" value="comment 2"/>
+        <comment number="3" value="comment 3"/>
+        <comment number="4" value=""/>
+      </title_block>
+    </sheet>
+  </design>
+  <components>
+    <comp ref="L_MTR1">
+      <value>ENCODER_MOTOR</value>
+      <libsource lib="brian_erickson" part="ENCODER_MOTOR"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamp>5A4FD5AE</tstamp>
+    </comp>
+    <comp ref="R_MTR1">
+      <value>ENCODER_MOTOR</value>
+      <libsource lib="brian_erickson" part="ENCODER_MOTOR"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamp>5A4FD6E6</tstamp>
+    </comp>
+    <comp ref="OLED1">
+      <value>OLED_SSD1331</value>
+      <libsource lib="brian_erickson" part="OLED_SSD1331"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamp>5A4FDAFF</tstamp>
+    </comp>
+    <comp ref="CAM1">
+      <value>JEVOIS</value>
+      <libsource lib="brian_erickson" part="JEVOIS"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamp>5A4FDEE7</tstamp>
+    </comp>
+    <comp ref="MCC1">
+      <value>MOTOR_CONTROLLER_WANGDD22</value>
+      <libsource lib="brian_erickson" part="MOTOR_CONTROLLER_WANGDD22"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamp>5A4FE9B8</tstamp>
+    </comp>
+    <comp ref="PS1">
+      <value>5V_UBEC</value>
+      <libsource lib="brian_erickson" part="5V_UBEC"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamp>5A4FF28B</tstamp>
+    </comp>
+    <comp ref="B1">
+      <value>3S_LIPO</value>
+      <libsource lib="brian_erickson" part="3S_LIPO"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamp>5A4FF30E</tstamp>
+    </comp>
+    <comp ref="U2">
+      <value>BALANCE_ALARM</value>
+      <libsource lib="brian_erickson" part="BALANCE_ALARM"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamp>5A4FFA0F</tstamp>
+    </comp>
+    <comp ref="SW1">
+      <value>SW_DIP_x01</value>
+      <libsource lib="switches" part="SW_DIP_x01"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamp>5A5114F1</tstamp>
+    </comp>
+    <comp ref="R1">
+      <value>400k</value>
+      <libsource lib="device" part="R"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamp>5A511658</tstamp>
+    </comp>
+    <comp ref="R2">
+      <value>100k</value>
+      <libsource lib="device" part="R"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamp>5A511723</tstamp>
+    </comp>
+    <comp ref="CSENSE1">
+      <value>W4953-A-COLOR-SENSOR</value>
+      <libsource lib="brian_erickson" part="W4953-A-COLOR-SENSOR"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamp>5A58EBFA</tstamp>
+    </comp>
+    <comp ref="CSENSE2">
+      <value>W4953-A-COLOR-SENSOR</value>
+      <libsource lib="brian_erickson" part="W4953-A-COLOR-SENSOR"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamp>5A58EC49</tstamp>
+    </comp>
+    <comp ref="U1">
+      <value>Teensy3.5_outer_pins</value>
+      <libsource lib="brian_erickson" part="Teensy3.5_outer_pins"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamp>5A590923</tstamp>
+    </comp>
+  </components>
+  <libparts>
+    <libpart lib="brian_erickson" part="3S_LIPO">
+      <fields>
+        <field name="Reference">B</field>
+        <field name="Value">3S_LIPO</field>
+      </fields>
+      <pins>
+        <pin num="~" name="7.4V" type="power_out"/>
+      </pins>
+    </libpart>
+    <libpart lib="brian_erickson" part="5V_UBEC">
+      <fields>
+        <field name="Reference">PS</field>
+        <field name="Value">5V_UBEC</field>
+      </fields>
+      <pins>
+        <pin num="~" name="5V_3A" type="power_out"/>
+      </pins>
+    </libpart>
+    <libpart lib="brian_erickson" part="BALANCE_ALARM">
+      <fields>
+        <field name="Reference">ALM</field>
+        <field name="Value">BALANCE_ALARM</field>
+      </fields>
+      <pins>
+        <pin num="~" name="+" type="power_in"/>
+      </pins>
+    </libpart>
+    <libpart lib="brian_erickson" part="ENCODER_MOTOR">
+      <description>SSD1331 SPI OLED 96x64 .95" 65k colors</description>
+      <fields>
+        <field name="Reference">MTR</field>
+        <field name="Value">ENCODER_MOTOR</field>
+      </fields>
+      <pins>
+        <pin num="1" name="-" type="input"/>
+        <pin num="2" name="GND" type="power_in"/>
+        <pin num="3" name="3V3" type="power_in"/>
+        <pin num="4" name="A" type="output"/>
+        <pin num="5" name="B" type="output"/>
+        <pin num="6" name="+" type="input"/>
+      </pins>
+    </libpart>
+    <libpart lib="brian_erickson" part="JEVOIS">
+      <fields>
+        <field name="Reference">CAM</field>
+        <field name="Value">JEVOIS</field>
+      </fields>
+      <pins>
+        <pin num="~" name="GND" type="power_in"/>
+      </pins>
+    </libpart>
+    <libpart lib="brian_erickson" part="MOTOR_CONTROLLER_WANGDD22">
+      <fields>
+        <field name="Reference">MCC</field>
+        <field name="Value">MOTOR_CONTROLLER_WANGDD22</field>
+      </fields>
+      <pins>
+        <pin num="~" name="+" type="power_in"/>
+      </pins>
+    </libpart>
+    <libpart lib="brian_erickson" part="OLED_SSD1331">
+      <description>Encoder motor with wheel from E-Bay</description>
+      <fields>
+        <field name="Reference">OLED</field>
+        <field name="Value">OLED_SSD1331</field>
+      </fields>
+      <pins>
+        <pin num="~" name="CS(CS)" type="BiDi"/>
+      </pins>
+    </libpart>
+    <libpart lib="device" part="R">
+      <description>Resistor</description>
+      <footprints>
+        <fp>R_*</fp>
+        <fp>R_*</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">R</field>
+        <field name="Value">R</field>
+      </fields>
+      <pins>
+        <pin num="1" name="~" type="passive"/>
+        <pin num="2" name="~" type="passive"/>
+      </pins>
+    </libpart>
+    <libpart lib="switches" part="SW_DIP_x01">
+      <description>1x DIP Switch, Single Pole Single Throw (SPST) switch, small symbol</description>
+      <footprints>
+        <fp>SW?DIP?x1*</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">SW</field>
+        <field name="Value">SW_DIP_x01</field>
+      </fields>
+      <pins>
+        <pin num="1" name="~" type="passive"/>
+        <pin num="2" name="~" type="passive"/>
+      </pins>
+    </libpart>
+    <libpart lib="brian_erickson" part="Teensy3.5_outer_pins">
+      <fields>
+        <field name="Reference">U</field>
+        <field name="Value">Teensy3.5_outer_pins</field>
+      </fields>
+      <pins>
+        <pin num="~" name="PWM_A9_23" type="BiDi"/>
+      </pins>
+    </libpart>
+    <libpart lib="brian_erickson" part="W4953-A-COLOR-SENSOR">
+      <fields>
+        <field name="Reference">CSENSE</field>
+        <field name="Value">W4953-A-COLOR-SENSOR</field>
+      </fields>
+      <pins>
+        <pin num="~" name="3V3" type="input"/>
+      </pins>
+    </libpart>
+  </libparts>
+  <libraries>
+    <library logical="device">
+      <uri>/usr/share/kicad/library/device.lib</uri>
+    </library>
+    <library logical="switches">
+      <uri>/usr/share/kicad/library/switches.lib</uri>
+    </library>
+    <library logical="brian_erickson">
+      <uri>/home/brian/colored-line-detector/schematic/libraries/brian_erickson/brian_erickson.lib</uri>
+    </library>
+  </libraries>
+  <nets>
+    <net code="1" name="Net-(R1-Pad2)">
+      <node ref="R2" pin="1"/>
+      <node ref="R1" pin="2"/>
+    </net>
+    <net code="2" name="GND">
+      <node ref="L_MTR1" pin="2"/>
+      <node ref="R_MTR1" pin="2"/>
+      <node ref="CAM1" pin="~"/>
+      <node ref="U1" pin="~"/>
+      <node ref="R2" pin="2"/>
+    </net>
+    <net code="3" name="Net-(PS1-Pad~)">
+      <node ref="SW1" pin="1"/>
+      <node ref="R1" pin="1"/>
+      <node ref="PS1" pin="~"/>
+    </net>
+    <net code="4" name="3V3">
+      <node ref="R_MTR1" pin="3"/>
+      <node ref="CSENSE1" pin="~"/>
+      <node ref="L_MTR1" pin="3"/>
+      <node ref="OLED1" pin="~"/>
+      <node ref="CAM1" pin="~"/>
+      <node ref="U1" pin="~"/>
+      <node ref="CSENSE2" pin="~"/>
+    </net>
+    <net code="5" name="SCL0">
+      <node ref="U1" pin="~"/>
+      <node ref="CSENSE1" pin="~"/>
+      <node ref="CSENSE2" pin="~"/>
+    </net>
+    <net code="6" name="SDA0">
+      <node ref="CSENSE2" pin="~"/>
+      <node ref="U1" pin="~"/>
+      <node ref="CSENSE1" pin="~"/>
+    </net>
+    <net code="8" name="Net-(U2-Pad~)">
+      <node ref="U2" pin="~"/>
+    </net>
+    <net code="9" name="Net-(U2-Pad~)">
+      <node ref="U2" pin="~"/>
+    </net>
+    <net code="10" name="Net-(U2-Pad~)">
+      <node ref="U2" pin="~"/>
+    </net>
+    <net code="11" name="Net-(U2-Pad~)">
+      <node ref="U2" pin="~"/>
+    </net>
+    <net code="12" name="Net-(U2-Pad~)">
+      <node ref="U2" pin="~"/>
+    </net>
+    <net code="13" name="Net-(U2-Pad~)">
+      <node ref="U2" pin="~"/>
+    </net>
+    <net code="14" name="Net-(U2-Pad~)">
+      <node ref="U2" pin="~"/>
+    </net>
+    <net code="15" name="R_FWD">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="16" name="OLED_RESET">
+      <node ref="OLED1" pin="~"/>
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="17" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="18" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="19" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="20" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="21" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="22" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="23" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="24" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="25" name="R_REV">
+      <node ref="MCC1" pin="~"/>
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="26" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="27" name="OLED_SCK">
+      <node ref="U1" pin="~"/>
+      <node ref="OLED1" pin="~"/>
+    </net>
+    <net code="28" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="29" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="30" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="31" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="32" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="33" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="34" name="5V">
+      <node ref="PS1" pin="~"/>
+      <node ref="U1" pin="~"/>
+      <node ref="CAM1" pin="~"/>
+    </net>
+    <net code="35" name="OLED_CS">
+      <node ref="U1" pin="~"/>
+      <node ref="OLED1" pin="~"/>
+    </net>
+    <net code="36" name="OLED_MOSI">
+      <node ref="OLED1" pin="~"/>
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="37" name="OLED_DC">
+      <node ref="OLED1" pin="~"/>
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="38" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="39" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="40" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="41" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="42" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="43" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="44" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="45" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="46" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="47" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="48" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="49" name="Net-(U1-Pad~)">
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="50" name="L_FWD">
+      <node ref="U1" pin="~"/>
+      <node ref="MCC1" pin="~"/>
+    </net>
+    <net code="51" name="L_REV">
+      <node ref="MCC1" pin="~"/>
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="52" name="LEncoderA">
+      <node ref="L_MTR1" pin="4"/>
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="53" name="LEncoderB">
+      <node ref="L_MTR1" pin="5"/>
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="54" name="LMotor+">
+      <node ref="L_MTR1" pin="6"/>
+      <node ref="R_MTR1" pin="6"/>
+      <node ref="MCC1" pin="~"/>
+      <node ref="MCC1" pin="~"/>
+    </net>
+    <net code="55" name="RMotor-">
+      <node ref="MCC1" pin="~"/>
+      <node ref="R_MTR1" pin="1"/>
+    </net>
+    <net code="56" name="REncoderA">
+      <node ref="U1" pin="~"/>
+      <node ref="R_MTR1" pin="4"/>
+    </net>
+    <net code="57" name="REncoderB">
+      <node ref="U1" pin="~"/>
+      <node ref="R_MTR1" pin="5"/>
+    </net>
+    <net code="58" name="CAM_RX">
+      <node ref="CAM1" pin="~"/>
+      <node ref="U1" pin="~"/>
+    </net>
+    <net code="59" name="CAM_TX">
+      <node ref="U1" pin="~"/>
+      <node ref="CAM1" pin="~"/>
+    </net>
+    <net code="60" name="LMotor-">
+      <node ref="L_MTR1" pin="1"/>
+      <node ref="MCC1" pin="~"/>
+    </net>
+    <net code="61" name="BALANCE_1">
+      <node ref="B1" pin="~"/>
+      <node ref="U2" pin="~"/>
+    </net>
+    <net code="62" name="BALANCE_2">
+      <node ref="U2" pin="~"/>
+      <node ref="B1" pin="~"/>
+    </net>
+    <net code="63" name="BAT-">
+      <node ref="MCC1" pin="~"/>
+      <node ref="B1" pin="~"/>
+      <node ref="PS1" pin="~"/>
+    </net>
+    <net code="64" name="BAT+">
+      <node ref="SW1" pin="2"/>
+      <node ref="MCC1" pin="~"/>
+      <node ref="B1" pin="~"/>
+    </net>
+  </nets>
+</export>

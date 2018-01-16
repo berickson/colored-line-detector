@@ -8,7 +8,8 @@
 using namespace std;
 
 char color_name(float r, float g, float b){
-  if (r < 0.2 && g < 0.1 && b < 0.3) {
+  if (r < 0.05 && g < 0.05) {
+  // if (r < 0.2 && g < 0.1 && b < 0.3) { 
     return 'k';
   }
   if (r > 2 * g){
@@ -227,20 +228,22 @@ class ColoredLineDetector : public jevois::Module,
       cv::Mat rgb = jevois::rawimage::convertToCvRGB(inimg);
 
       // try to auto white balance
-      cv::Mat planes[3];
-      cv::split(rgb, planes);
-      auto median_r = median(planes[0], 256);
-      auto median_g = median(planes[1], 256);
-      auto median_b = median(planes[2], 256);
-      cv::Mat new_r, new_g, new_b;
-      planes[0].convertTo(new_r, planes[0].type(), (float)1/(float)median_r);
-      planes[1].convertTo(new_g, planes[0].type(), (float)1/(float)median_g);
-      planes[2].convertTo(new_b, planes[0].type(), (float)1/(float)median_b);
-      vector<cv::Mat> channels;
-      channels.push_back(new_r);
-      channels.push_back(new_g);
-      channels.push_back(new_b);
-      cv::merge(channels, rgb);
+      if(0) {
+        cv::Mat planes[3];
+        cv::split(rgb, planes);
+        auto median_r = median(planes[0], 256);
+        auto median_g = median(planes[1], 256);
+        auto median_b = median(planes[2], 256);
+        cv::Mat new_r, new_g, new_b;
+        planes[0].convertTo(new_r, planes[0].type(), (float)1/(float)median_r);
+        planes[1].convertTo(new_g, planes[0].type(), (float)1/(float)median_g);
+        planes[2].convertTo(new_b, planes[0].type(), (float)1/(float)median_b);
+        vector<cv::Mat> channels;
+        channels.push_back(new_r);
+        channels.push_back(new_g);
+        channels.push_back(new_b);
+        cv::merge(channels, rgb);
+      }
       
 
       auto image_width = rgb.cols;

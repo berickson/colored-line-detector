@@ -1,17 +1,79 @@
+#include <SerialCommands.h> // see https://github.com/ppedro74/Arduino-SerialCommands
+
 #define pin_oled_sclk 13
 #define pin_oled_mosi 11
 #define pin_oled_cs   10
 #define pin_oled_rst  9
-#define pin_oled_dc   8
+#define pin_oled_dc   12
+#define pin_button_1_a 30
+#define pin_button_1_b 32
+const int pin_left_fwd = 5;
+const int pin_left_rev = 6;
+
+const int pin_right_fwd = 21;
+const int pin_right_rev = 22;
+
+const int pin_left_a = 15;
+const int pin_left_b = 4;
+const int pin_battery_voltage_divider = A9;
 
 
-#include <SerialCommands.h> // see https://github.com/ppedro74/Arduino-SerialCommands
+int sign_of(int i) {
+  if (i<0) return -1;
+  return 1;
+}
+
+class Motor {
+  public:
+    const int pin_fwd;
+    const int pin_rev;
+    const int power_stall = (int) 145.;
+    const int power_max = (int) 255;
+    const int pwm_frequency = 50000;
+    
+    Motor(int pin_fwd, int pin_rev) : pin_fwd(pin_fwd), pin_rev(pin_rev){
+    }
+
+    void setup() {
+      pinMode(pin_fwd, OUTPUT);
+      pinMode(pin_rev, OUTPUT);
+      analogWriteFrequency(pin_fwd, pwm_frequency);
+      analogWriteFrequency(pin_rev, pwm_frequency);
+    }
+
+    void set_speed_raw(int speed) {
+      Serial.println(speed);
+      if(speed >= 0) {
+        analogWrite(pin_fwd, speed);
+        analogWrite(pin_rev, 0);
+      } else {
+        analogWrite(pin_fwd, 0);
+        analogWrite(pin_rev, -speed);
+      }
+    }
+
+    void set_speed_percent(int percent) {
+      int power = abs(percent);
+      int raw_power = ( percent == 0) ? 0 : map(power, 0, 100, power_stall, power_max);
+      
+      set_speed_raw(sign_of(percent) * raw_power);
+      
+    }
+};
+
+Motor motor_left(pin_left_fwd, pin_left_rev);
+Motor motor_right(pin_right_fwd, pin_right_rev);
+
+
+
+
 
 
 
 #include <Adafruit_GFX.h>
 #include "Adafruit_SSD1331.h"
 #include <SPI.h>
+
 
 // Color definitions
 #define BLACK           0x0000
@@ -27,6 +89,66 @@
 
 const int display_width = 96;
 const int display_height = 64;
+
+// button that is tied directly to two digital pins
+// the only reason you would do this is if it is easier
+// to mount to pins instead of mounting to ground or vcc
+class TwoPinButton {
+public:
+  const int pin_a;
+  const int pin_b;
+  bool prev_pressed = false;
+  
+  TwoPinButton(int pin_a, int pin_b) : pin_a(pin_a), pin_b(pin_b) {
+    pinMode(pin_a, OUTPUT);
+    pinMode(pin_b, INPUT_PULLUP);
+    digitalWrite(pin_a, 0);
+  }
+
+  bool is_pressed() {
+    return digitalRead(pin_b)==0;
+  }
+
+  bool was_clicked() {
+    bool pressed = is_pressed();
+    bool clicked = false;
+    if(is_pressed() && ! prev_pressed) {
+      clicked = true;
+    }
+    prev_pressed = pressed;
+    return clicked;
+  }
+  
+};
+
+TwoPinButton button1(pin_button_1_a, pin_button_1_b);
+
+class VoltageDivider {
+public:
+  const int pin;
+  float multiplier;
+
+  // 3.338 was measured for vref
+  VoltageDivider(int pin, float resistor1_k, float resistor2_k) : pin(pin), multiplier((resistor1_k + resistor2_k) / resistor2_k  * 3.338 / 1023 * 8 / 7.37) {
+  }
+
+  void setup() {
+    pinMode(pin, INPUT);
+  }
+
+  float get_voltage() {
+    const int sample_count = 100;
+    float sum = 0;
+    for(int i = 0; i < sample_count; i++) {
+      sum += analogRead(pin) * multiplier;  
+    }
+    return sum / sample_count;
+    
+  }
+ 
+};
+
+VoltageDivider v_bat(pin_battery_voltage_divider, 463.1, 98.28);
 
 
 
@@ -121,16 +243,13 @@ void show_goalpost(const char * bottom, const char * left, const char * right) {
   
 }
 
-
-void pause() {
-  delay(0);
-}
-
 SerialCommand cmd_colors_sensed("cld",on_colors_sensed);
 
 void setup(void) {
   Serial1.begin(115200);
   display.begin();
+  motor_left.setup();
+  motor_right.setup();
   display.fillScreen(GRAY);
   serial_commands.SetDefaultHandler(on_unrecognized);
   serial_commands.AddCommand(&cmd_colors_sensed);
@@ -144,6 +263,21 @@ void drawTile(uint8_t x, uint8_t y) {
   display.fillRect(x+20,y+25,5,20,BLACK);
   display.fillRect(x+25,y+20,20,5,BLUE);
 }
+
+const char * color_order = "krgb";
+int current_color_index = 0;
+
+/*
+class Tile {
+  
+  public:
+  char color_forward = "?";
+  char color_right = "?";
+  char color_back = "?";
+  char color_left = "?";
+}
+*/
+
 
 class LoopChecker {
   public:
@@ -166,9 +300,91 @@ LoopChecker loop_checker;
 
 
 void loop() {
+  static int run_mode = 0;
+  const int run_mode_count = 12;
+  
   loop_checker.run();
   serial_commands.ReadSerial();
-  bool second_boundary = loop_checker.every_n_ms(1000);
+  bool boundary_1_s = loop_checker.every_n_ms(1000);
+
+  bool boundary_100_ms = loop_checker.every_n_ms(100);
+
+  if(boundary_100_ms) {
+    if(button1.was_clicked()) {
+      run_mode = (run_mode+1)%run_mode_count;
+
+      switch (run_mode) {
+        case 0:
+          motor_left.set_speed_percent(0);
+          motor_right.set_speed_percent(0);
+          break;
+          
+        case 1:
+          motor_left.set_speed_percent(100);
+          motor_right.set_speed_percent(100);
+          break;
+          
+        case 2:
+          motor_left.set_speed_percent(0);
+          motor_right.set_speed_percent(0);
+          break;
+          
+        case 3:
+          motor_left.set_speed_percent(-100);
+          motor_right.set_speed_percent(-100);
+          break;
+          
+        case 4:
+          motor_left.set_speed_percent(0);
+          motor_right.set_speed_percent(0);
+          break;
+
+        case 5:
+          motor_left.set_speed_percent(-100);
+          motor_right.set_speed_percent(100);
+          break;
+
+        case 6:
+          motor_left.set_speed_percent(0);
+          motor_right.set_speed_percent(0);
+          break;
+          
+        case 7:
+          motor_left.set_speed_percent(100);
+          motor_right.set_speed_percent(-100);
+          break;
+          
+        case 8:
+          motor_left.set_speed_percent(0);
+          motor_right.set_speed_percent(0);
+          break;
+          
+        case 9:
+          motor_left.set_speed_percent(100);
+          motor_right.set_speed_percent(50);
+          break;
+          
+        case 10:
+          motor_left.set_speed_percent(0);
+          motor_right.set_speed_percent(0);
+          break;
+          
+        case 11:
+          motor_left.set_speed_percent(50);
+          motor_right.set_speed_percent(100);
+          break;
+          
+        default:
+          motor_left.set_speed_percent(0);
+          motor_right.set_speed_percent(0);
+          break;
+        
+      }
+    }
+  }
+
+
+  
 
 /*
   if(second_boundary) {
@@ -176,7 +392,10 @@ void loop() {
     drawTile(50,0);
   }
 */
-  if(second_boundary) {
+  if(boundary_1_s) {
+    display.fillScreen(GRAY);
+    display.setCursor(10,10);
+    display.print(String(v_bat.get_voltage())+"v");
     Serial.println((String)"Loop count: " + loop_checker.loop_count);
   }
 }
