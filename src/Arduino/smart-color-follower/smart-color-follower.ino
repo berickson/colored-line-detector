@@ -393,8 +393,14 @@ void loop() {
   }
 */
   if(boundary_1_s) {
-    display.fillScreen(GRAY);
+    //display.fillScreen(GRAY);
     display.setCursor(10,10);
+    String v_string = (String)v_bat.get_voltage()+"v";
+    int16_t x1,y1;
+    uint16_t h, w;
+    display.getTextBounds((char *)v_string.c_str(), 10, 10,
+      &x1, &y1, &w, &h);
+    display.fillRect(x1,y1,w,h,GRAY);
     display.print(String(v_bat.get_voltage())+"v");
     Serial.println((String)"Loop count: " + loop_checker.loop_count);
   }
