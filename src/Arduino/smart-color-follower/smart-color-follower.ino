@@ -27,13 +27,8 @@ int sign_of(int i) {
   if (i<0) return -1;
   return 1;
 }
-#define __GXX_RTTI
-#include <functional>
 
 class QuadratureEncoder {
-private:
-  std::function<void()> callback_a;
-  std::function<void()> callback_b;
 public:
   const int pin_a;
   const int pin_b;
@@ -42,13 +37,8 @@ public:
   long b_ticks = 0;
   unsigned int a_us;
   unsigned int b_us;
-  
 
   QuadratureEncoder(int pin_a, int pin_b) : pin_a(pin_a), pin_b(pin_b){
-    callback_a = std::bind( &QuadratureEncoder::on_a_changed, *this );
-    
-    callback_b = std::bind( &QuadratureEncoder::on_b_changed, *this );
-    //attachInterrupt(pin_b, callback_b, CHANGE);
   }
 
   inline void on_a_changed() {
@@ -71,7 +61,6 @@ public:
 
   inline long get_ticks() {
     return a_ticks + b_ticks;
-    
   }
 };
 
@@ -91,6 +80,10 @@ public:
   volatile float v_b;
   
   Speedometer(QuadratureEncoder & encoder, float meters_per_tick) : encoder(encoder), meters_per_tick(meters_per_tick) {}
+
+  inline float get_velocity() {
+    return velocity;
+  }
   
   void update() {
     float last_v = velocity;
@@ -149,7 +142,7 @@ public:
 
 
 QuadratureEncoder right_encoder(pin_right_a, pin_right_b);
-Speedometer speedometer(right_encoder, 1./4225);
+Speedometer speedometer(right_encoder, 1./4520);
 
 // unfortunatly, we need external callbacks
 void on_right_a_changed () {
@@ -334,19 +327,19 @@ void cmd_go(SerialCommands * sender) {
   float destination_meters = d + speedometer.get_odo_meters();
   float velocity_max = atof(sender->Next());
   float throttle = 0;
-  float k_p = 2.0;
-  float k_d = 100;
+  float velocity_k_p = 200.0;
+  float velocity_k_d = 50;
   float last_error = 0;
   float last_position_error = 0;
 
   float position_k_p = 10;
   float position_k_d = 200;
-  
+  float accel_m_s2 = 3;
+
   motor_left.set_speed_percent(throttle);
   motor_right.set_speed_percent(throttle);
 
   sender->GetSerial()->println((String) "go " + d + " " + velocity_max);
-  
 
   while(speedometer.get_odo_meters() < destination_meters) {
     delay(1);
@@ -355,22 +348,23 @@ void cmd_go(SerialCommands * sender) {
 
     float position_error = destination_meters - speedometer.get_odo_meters();
     float velocity_sp = position_k_p * position_error + position_k_d * (position_error-last_position_error);
+    //float velocity_sp = position_error > 0 ? sqrt(2 * position_error * accel_m_s2) : 0;
     velocity_sp = constrain(velocity_sp, -velocity_max, velocity_max);
-    sender->GetSerial()->println((String)position_error + " v_sp: " + velocity_sp);
 
     float error = velocity_sp - speedometer.velocity;
     float d_error = error-last_error;
-    throttle += k_p * error + k_d * d_error;
+    throttle += velocity_k_p * error + velocity_k_d * d_error;
+    throttle = constrain(throttle, -100, 100);
+    //output += (String)position_error + " v: " + speedometer.velocity + " v_sp: " + velocity_sp + "gas: " + throttle + "\r\n";
     motor_left.set_speed_percent(throttle);
     motor_right.set_speed_percent(throttle);
     last_error = error;
     last_position_error = position_error;
   }
-  
+
   motor_left.set_speed_percent(0);
   motor_right.set_speed_percent(0);
-  delay(1000);
-  speedometer.update();
+  sender->GetSerial()->println((String)"final velocity: " + speedometer.get_velocity());
   sender->GetSerial()->println((String)"final distance: " + (destination_meters - speedometer.get_odo_meters()));
 }
 
