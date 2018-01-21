@@ -22,6 +22,10 @@ const int pin_battery_voltage_divider = A9;
 
 #define Bluetooth Serial3
 
+float sign_of(float i) {
+  if (i<0) return -1;
+  return 1;
+}
 
 int sign_of(int i) {
   if (i<0) return -1;
@@ -68,8 +72,8 @@ class Speedometer {
 public:
   QuadratureEncoder & encoder;
   float meters_per_tick = 0; // set by client
-  int last_odo_a = 0;
-  int last_odo_b = 0;
+  long last_odo_a = 0;
+  long last_odo_b = 0;
   unsigned int last_a_us = 0;
   unsigned int last_b_us = 0;
   unsigned int last_ab_us = 0;
@@ -321,13 +325,11 @@ void cmd_right(SerialCommands * sender) {
   motor_right.set_speed_percent(-speed_percent_sp);
 }
 
-void cmd_go(SerialCommands * sender) {
-  sender->GetSerial()->println("inside go");
-  float d = atof(sender->Next());
-  float destination_meters = d + speedometer.get_odo_meters();
-  float velocity_max = atof(sender->Next());
+void move(float d, double velocity_max, float ratio_left = 1, float ratio_right = 1) {
+  Bluetooth.println((String)"move "+ d + " " + ratio_left + " " + ratio_right);
+  float destination_meters = ratio_right * d + speedometer.get_odo_meters();
   float throttle = 0;
-  float velocity_k_p = 200.0;
+  float velocity_k_p = 25.0;
   float velocity_k_d = 50;
   float last_error = 0;
   float last_position_error = 0;
@@ -336,12 +338,12 @@ void cmd_go(SerialCommands * sender) {
   float position_k_d = 200;
   float accel_m_s2 = 3;
 
-  motor_left.set_speed_percent(throttle);
-  motor_right.set_speed_percent(throttle);
+  float fwd_rev = sign_of(ratio_right); // 1 for forward, -1 for reverse
 
-  sender->GetSerial()->println((String) "go " + d + " " + velocity_max);
+  motor_left.set_speed_percent(throttle * ratio_right);
+  motor_right.set_speed_percent(throttle * ratio_left);
 
-  while(speedometer.get_odo_meters() < destination_meters) {
+  while(speedometer.get_odo_meters() * fwd_rev  < destination_meters * fwd_rev) {
     delay(1);
     speedometer.update();
     loop();
@@ -353,19 +355,38 @@ void cmd_go(SerialCommands * sender) {
 
     float error = velocity_sp - speedometer.velocity;
     float d_error = error-last_error;
-    throttle += velocity_k_p * error + velocity_k_d * d_error;
+    throttle += fwd_rev * (velocity_k_p * error + velocity_k_d * d_error);
     throttle = constrain(throttle, -100, 100);
     //output += (String)position_error + " v: " + speedometer.velocity + " v_sp: " + velocity_sp + "gas: " + throttle + "\r\n";
-    motor_left.set_speed_percent(throttle);
-    motor_right.set_speed_percent(throttle);
+    motor_left.set_speed_percent(ratio_left * throttle);
+    motor_right.set_speed_percent(ratio_right * throttle);
     last_error = error;
     last_position_error = position_error;
   }
 
   motor_left.set_speed_percent(0);
   motor_right.set_speed_percent(0);
-  sender->GetSerial()->println((String)"final velocity: " + speedometer.get_velocity());
-  sender->GetSerial()->println((String)"final distance: " + (destination_meters - speedometer.get_odo_meters()));
+  Bluetooth.println((String)"final velocity: " + speedometer.get_velocity());
+  Bluetooth.println((String)"distance error: " + (destination_meters - speedometer.get_odo_meters()));
+}
+
+void cmd_turn(SerialCommands * sender) {
+  // turns anticlockwise distance d
+  sender->GetSerial()->println("inside turn");
+  float degrees = atof(sender->Next());
+  float meters_per_degree = 0.14/90.;
+  float d = degrees * meters_per_degree;
+  float velocity_max = atof(sender->Next());
+  int ccw_cw = sign_of(d);
+  move(fabs(d), velocity_max, -ccw_cw, ccw_cw);
+}
+
+void cmd_go(SerialCommands * sender) {
+  sender->GetSerial()->println("inside go");
+  float d = atof(sender->Next());
+  float velocity_max = atof(sender->Next());
+
+  move(d, velocity_max);
 }
 
 
@@ -466,6 +487,7 @@ void show_goalpost(const char * bottom, const char * left, const char * right) {
 SerialCommand cmd_colors_sensed("cld",on_colors_sensed);
 
 SerialCommand cmd_go_sensed("go",cmd_go);
+SerialCommand cmd_turn_sensed("turn",cmd_turn);
 SerialCommand cmd_fwd_sensed("fwd",cmd_fwd);
 SerialCommand cmd_rev_sensed("rev",cmd_rev);
 SerialCommand cmd_left_sensed("left",cmd_left);
@@ -484,6 +506,7 @@ void setup(void) {
 
   Bluetooth.begin(9600);
   bluetooth_commands.AddCommand(&cmd_go_sensed);
+  bluetooth_commands.AddCommand(&cmd_turn_sensed);
   bluetooth_commands.AddCommand(&cmd_fwd_sensed);
   bluetooth_commands.AddCommand(&cmd_rev_sensed);
   bluetooth_commands.AddCommand(&cmd_left_sensed);
