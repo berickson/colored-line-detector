@@ -3,9 +3,9 @@ void setup() {
   while(!Serial) {
     
   }
-  Serial3.begin(9600);
+  Serial4.begin(115200);
   Serial.print("waiting for serial ready");
-  if(!Serial3) {
+  if(!Serial4) {
     delay(1);
   }
   Serial.print("ready");
@@ -13,10 +13,10 @@ void setup() {
 }
 
 void loop() {
-  while(Serial3.available()) {
-    Serial.write(Serial3.read());
+  while(Serial4.available()) {
+    Serial.write(Serial4.read());
   }
   while(Serial.available()) {
-    Serial3.write(Serial.read());
+    Serial4.write(Serial.read());
   }
 }

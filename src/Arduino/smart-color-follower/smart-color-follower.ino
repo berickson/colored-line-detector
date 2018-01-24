@@ -146,7 +146,7 @@ public:
 
 
 QuadratureEncoder right_encoder(pin_right_a, pin_right_b);
-Speedometer speedometer(right_encoder, 1./4520);
+Speedometer speedometer(right_encoder, 1./4500);
 
 // unfortunatly, we need external callbacks
 void on_right_a_changed () {
@@ -225,6 +225,39 @@ const int display_width = 96;
 const int display_height = 64;
 
 int speed_percent_sp = 50;
+
+class Goalpost {
+public:
+  String left;
+  String right;
+  String bottom;
+
+
+
+  bool intersection_ahead() {
+    int max_distance = 5;
+    bool left_ahead = false;
+    bool right_ahead = false;
+    for (int i=0; i < max_distance && left[i] != 0; i++) {
+      if (left[i] != '.') {
+        left_ahead = true;
+        break;
+      }
+    }
+    for (int i=0; i < max_distance && right[i] != 0; i++) {
+      if (right[i] != '.') {
+        right_ahead = true;
+        break;
+      }
+    }
+    if(left_ahead && right_ahead) {
+      return true;
+    }
+    return false;
+  }
+
+} goalpost;
+
 
 // button that is tied directly to two digital pins
 // the only reason you would do this is if it is easier
@@ -311,16 +344,16 @@ char bluetooth_command_buffer_[100];
 SerialCommands bluetooth_commands(&Bluetooth, bluetooth_command_buffer_, sizeof(bluetooth_command_buffer_), (char *)"\r\n", (char *)" ");
 
 
-void cmd_set_speed(SerialCommands * sender) {
+void on_set_speed(SerialCommands * sender) {
   speed_percent_sp = atoi(sender->Next());
 }
 
-void cmd_left(SerialCommands * sender) {
+void on_left(SerialCommands * sender) {
   motor_left.set_speed_percent(-speed_percent_sp);
   motor_right.set_speed_percent(speed_percent_sp);
 }
 
-void cmd_right(SerialCommands * sender) {
+void on_right(SerialCommands * sender) {
   motor_left.set_speed_percent(speed_percent_sp);
   motor_right.set_speed_percent(-speed_percent_sp);
 }
@@ -329,8 +362,8 @@ void move(float d, double velocity_max, float ratio_left = 1, float ratio_right 
   Bluetooth.println((String)"move "+ d + " " + ratio_left + " " + ratio_right);
   float destination_meters = ratio_right * d + speedometer.get_odo_meters();
   float throttle = 0;
-  float velocity_k_p = 25.0;
-  float velocity_k_d = 50;
+  float velocity_k_p = 12.0;
+  float velocity_k_d = 100;
   float last_error = 0;
   float last_position_error = 0;
 
@@ -343,7 +376,7 @@ void move(float d, double velocity_max, float ratio_left = 1, float ratio_right 
   motor_left.set_speed_percent(throttle * ratio_right);
   motor_right.set_speed_percent(throttle * ratio_left);
 
-  while(speedometer.get_odo_meters() * fwd_rev  < destination_meters * fwd_rev) {
+  while(speedometer.get_odo_meters() * fwd_rev  < destination_meters * fwd_rev || fabs(speedometer.get_velocity()) > 0.005) {
     delay(1);
     speedometer.update();
     loop();
@@ -370,7 +403,7 @@ void move(float d, double velocity_max, float ratio_left = 1, float ratio_right 
   Bluetooth.println((String)"distance error: " + (destination_meters - speedometer.get_odo_meters()));
 }
 
-void cmd_turn(SerialCommands * sender) {
+void on_turn(SerialCommands * sender) {
   // turns anticlockwise distance d
   sender->GetSerial()->println("inside turn");
   float degrees = atof(sender->Next());
@@ -381,30 +414,42 @@ void cmd_turn(SerialCommands * sender) {
   move(fabs(d), velocity_max, -ccw_cw, ccw_cw);
 }
 
-void cmd_go(SerialCommands * sender) {
+void on_go(SerialCommands * sender) {
   sender->GetSerial()->println("inside go");
-  float d = atof(sender->Next());
+  const char * param1 = sender->Next();
+  float d = atof(param1);
   float velocity_max = atof(sender->Next());
 
   move(d, velocity_max);
 }
 
+void on_go_intersection(SerialCommands * sender) {
+  motor_left.set_speed_percent(50);
+  motor_right.set_speed_percent(50);
+  while(!goalpost.intersection_ahead()) {
+    loop();
+  }
+  move(0.105, 0.5);
+  motor_left.set_speed_percent(0);
+  motor_right.set_speed_percent(0);
+}
 
 
-void cmd_fwd(SerialCommands * sender) {
+void on_fwd(SerialCommands * sender) {
   motor_left.set_speed_percent(speed_percent_sp);
   motor_right.set_speed_percent(speed_percent_sp);
 }
 
-void cmd_rev(SerialCommands * sender) {
+void on_rev(SerialCommands * sender) {
   motor_left.set_speed_percent(-speed_percent_sp);
   motor_right.set_speed_percent(-speed_percent_sp);
 }
 
-void cmd_stop(SerialCommands * sender) {
+void on_stop(SerialCommands * sender) {
   motor_left.set_speed_percent(0);
   motor_right.set_speed_percent(0);
 }
+
 
 void on_colors_sensed(SerialCommands * sender) {
   char * bottom = sender->Next();
@@ -422,6 +467,10 @@ void on_colors_sensed(SerialCommands * sender) {
     // invalid colors
     return;
   }
+  goalpost.left = left;
+  goalpost.right = right;
+  goalpost.bottom = bottom;
+  
   show_goalpost(bottom, left, right);
 }
 
@@ -480,20 +529,19 @@ void show_goalpost(const char * bottom, const char * left, const char * right) {
       sensor_height,
       sensor_color(right[i]));
   }
-
-  
 }
 
 SerialCommand cmd_colors_sensed("cld",on_colors_sensed);
 
-SerialCommand cmd_go_sensed("go",cmd_go);
-SerialCommand cmd_turn_sensed("turn",cmd_turn);
-SerialCommand cmd_fwd_sensed("fwd",cmd_fwd);
-SerialCommand cmd_rev_sensed("rev",cmd_rev);
-SerialCommand cmd_left_sensed("left",cmd_left);
-SerialCommand cmd_right_sensed("right",cmd_right);
-SerialCommand cmd_stop_sensed("stop",cmd_stop);
-SerialCommand cmd_set_speed_sensed("speed",cmd_set_speed);
+SerialCommand cmd_go("go", on_go);
+SerialCommand cmd_go_intersection("go_intersection", on_go_intersection);
+SerialCommand cmd_turn("turn", on_turn);
+SerialCommand cmd_fwd("fwd", on_fwd);
+SerialCommand cmd_rev("rev", on_rev);
+SerialCommand cmd_left("left", on_left);
+SerialCommand cmd_right("right", on_right);
+SerialCommand cmd_stop("stop", on_stop);
+SerialCommand cmd_set_speed("speed", on_set_speed);
 
 void setup(void) {
   Serial1.begin(115200);
@@ -505,15 +553,15 @@ void setup(void) {
   camera_commands.AddCommand(&cmd_colors_sensed);
 
   Bluetooth.begin(9600);
-  bluetooth_commands.AddCommand(&cmd_go_sensed);
-  bluetooth_commands.AddCommand(&cmd_turn_sensed);
-  bluetooth_commands.AddCommand(&cmd_fwd_sensed);
-  bluetooth_commands.AddCommand(&cmd_rev_sensed);
-  bluetooth_commands.AddCommand(&cmd_left_sensed);
-  bluetooth_commands.AddCommand(&cmd_right_sensed);
-  bluetooth_commands.AddCommand(&cmd_stop_sensed);
-  bluetooth_commands.AddCommand(&cmd_set_speed_sensed);
-  
+  bluetooth_commands.AddCommand(&cmd_go);
+  bluetooth_commands.AddCommand(&cmd_go_intersection);
+  bluetooth_commands.AddCommand(&cmd_turn);
+  bluetooth_commands.AddCommand(&cmd_fwd);
+  bluetooth_commands.AddCommand(&cmd_rev);
+  bluetooth_commands.AddCommand(&cmd_left);
+  bluetooth_commands.AddCommand(&cmd_right);
+  bluetooth_commands.AddCommand(&cmd_stop);
+  bluetooth_commands.AddCommand(&cmd_set_speed);
 }
 
 void drawTile(uint8_t x, uint8_t y) {
