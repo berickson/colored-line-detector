@@ -446,50 +446,6 @@ void on_stop(SerialCommands * sender) {
 }
 
 
-void move(float d, double velocity_max, float ratio_left = 1, float ratio_right = 1) {
-  bluetooth.println((String)"move "+ d + " " + ratio_left + " " + ratio_right);
-  float destination_meters = ratio_right * d + speedometer.get_odo_meters();
-  float throttle = 0;
-  float velocity_k_p = 6.0;
-  float velocity_k_d = 100;
-  float last_error = 0;
-  float last_position_error = 0;
-
-  float position_k_p = 10;
-  float position_k_d = 200;
-  float accel_m_s2 = 3;
-
-  float fwd_rev = sign_of(ratio_right); // 1 for forward, -1 for reverse
-
-  motor_left.set_speed_percent(throttle * ratio_right);
-  motor_right.set_speed_percent(throttle * ratio_left);
-
-  while(speedometer.get_odo_meters() * fwd_rev  < destination_meters * fwd_rev || fabs(speedometer.get_velocity()) > 0.005) {
-    delay(1);
-    speedometer.execute();
-    loop();
-
-    float position_error = destination_meters - speedometer.get_odo_meters();
-    float velocity_sp = position_k_p * position_error + position_k_d * (position_error-last_position_error);
-    //float velocity_sp = position_error > 0 ? sqrt(2 * position_error * accel_m_s2) : 0;
-    velocity_sp = constrain(velocity_sp, -velocity_max, velocity_max);
-
-    float error = velocity_sp - speedometer.velocity;
-    float d_error = error-last_error;
-    throttle += fwd_rev * (velocity_k_p * error + velocity_k_d * d_error);
-    throttle = constrain(throttle, -100, 100);
-    //output += (String)position_error + " v: " + speedometer.velocity + " v_sp: " + velocity_sp + "gas: " + throttle + "\r\n";
-    motor_left.set_speed_percent(ratio_left * throttle);
-    motor_right.set_speed_percent(ratio_right * throttle);
-    last_error = error;
-    last_position_error = position_error;
-  }
-
-  motor_left.set_speed_percent(0);
-  motor_right.set_speed_percent(0);
-  bluetooth.println((String)"final velocity: " + speedometer.get_velocity());
-  bluetooth.println((String)"distance error: " + (destination_meters - speedometer.get_odo_meters()));
-}
 
 void on_turn(SerialCommands * sender) {
   // turns anticlockwise distance d
@@ -499,7 +455,7 @@ void on_turn(SerialCommands * sender) {
   float d = degrees * meters_per_degree;
   float velocity_max = atof(sender->Next());
   int ccw_cw = sign_of(d);
-  move(fabs(d), velocity_max, -ccw_cw, ccw_cw);
+  driver.set_goal(fabs(d), velocity_max, -ccw_cw, ccw_cw);
 }
 
 void on_go(SerialCommands * sender) {
@@ -508,7 +464,7 @@ void on_go(SerialCommands * sender) {
   float d = atof(param1);
   float velocity_max = atof(sender->Next());
 
-  move(d, velocity_max);
+  driver.set_goal(d, velocity_max);
 }
 
 void on_go_intersection(SerialCommands * sender) {
