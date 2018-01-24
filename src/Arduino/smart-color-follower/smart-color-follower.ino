@@ -180,7 +180,6 @@ class Motor {
     }
 
     void set_speed_raw(int speed) {
-      Serial.println(speed);
       if(speed >= 0) {
         analogWrite(pin_fwd, speed);
         analogWrite(pin_rev, 0);
@@ -302,15 +301,6 @@ public:
   }
 
   void setup() {
-    Serial.begin(115200);
-    while(!Serial){}
-    bluetooth.begin(9600);
-    Serial.print("waiting for Bluetooth...");
-    while(!bluetooth){
-      delay(1);
-    }
-    Serial.println("ready");
-    
     pinMode(pin, INPUT);
   }
 
@@ -409,7 +399,7 @@ public:
 Driver driver;
 
 
-// buffer must be big enough for command, arguments, terminiators and null
+// buffer must be big enough for command, arguments, terminators and null
 char camera_command_buffer_[100];
 SerialCommands camera_commands(&Serial1, camera_command_buffer_, sizeof(camera_command_buffer_), (char *)"\r\n", (char *)" ");
 char bluetooth_command_buffer_[100];
@@ -419,6 +409,7 @@ const float max_meters = 1;
 
 void on_set_speed(SerialCommands * sender) {
   speed_m_s_sp = atof(sender->Next());
+  bluetooth.println("ok");
 }
 
 void on_left(SerialCommands * sender) {
@@ -443,9 +434,8 @@ void on_rev(SerialCommands * sender) {
 
 void on_stop(SerialCommands * sender) {
   driver.stop();
+  bluetooth.println("ok");
 }
-
-
 
 void on_turn(SerialCommands * sender) {
   // turns anticlockwise distance d
@@ -456,15 +446,16 @@ void on_turn(SerialCommands * sender) {
   float velocity_max = atof(sender->Next());
   int ccw_cw = sign_of(d);
   driver.set_goal(fabs(d), velocity_max, -ccw_cw, ccw_cw);
+  bluetooth.println("ok");
 }
 
 void on_go(SerialCommands * sender) {
-  sender->GetSerial()->println("inside go");
   const char * param1 = sender->Next();
   float d = atof(param1);
   float velocity_max = atof(sender->Next());
 
   driver.set_goal(d, velocity_max);
+  bluetooth.println("ok");
 }
 
 void on_go_intersection(SerialCommands * sender) {
@@ -570,7 +561,28 @@ SerialCommand cmd_stop("stop", on_stop);
 SerialCommand cmd_set_speed("speed", on_set_speed);
 
 void setup(void) {
-  Serial1.begin(115200);
+  Serial1.begin(115200); // camera
+  Serial.begin(115200);  // host
+  while(!Serial){}
+  bluetooth.begin(9600);
+  Serial.print("waiting for Bluetooth...");
+  while(!bluetooth){
+    delay(1);
+  }
+  Serial.println("ready");
+    
+
+  bluetooth.print("AT+BAUD8");
+  delay(100);
+  while(bluetooth.available()) {
+    Serial.write(bluetooth.read());
+  }
+  bluetooth.end();
+  bluetooth.begin(115200); // http://www.instructables.com/id/AT-command-mode-of-HC-05-Bluetooth-module/
+  bluetooth.println("bluetooth connected at 115200");
+
+
+
   display.begin();
   motor_left.setup();
   motor_right.setup();
@@ -578,7 +590,7 @@ void setup(void) {
   camera_commands.SetDefaultHandler(on_unrecognized);
   camera_commands.AddCommand(&cmd_colors_sensed);
 
-  bluetooth.begin(9600);
+  
   bluetooth_commands.AddCommand(&cmd_go);
   bluetooth_commands.AddCommand(&cmd_go_intersection);
   bluetooth_commands.AddCommand(&cmd_turn);
@@ -653,5 +665,6 @@ void loop() {
     display.fillRect(x1,y1,w,h,GRAY);
     display.print(v_string);
   }
+
 }
 
