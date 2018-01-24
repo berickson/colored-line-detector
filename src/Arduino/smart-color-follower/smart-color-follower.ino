@@ -20,7 +20,7 @@ const int pin_left_a = 15;
 const int pin_left_b = 4;
 const int pin_battery_voltage_divider = A9;
 
-#define Bluetooth Serial3
+#define bluetooth Serial3
 
 float sign_of(float i) {
   if (i<0) return -1;
@@ -89,7 +89,7 @@ public:
     return velocity;
   }
   
-  void update() {
+  void execute() {
     float last_v = velocity;
 
     auto a_us = encoder.a_us;
@@ -224,7 +224,7 @@ Motor motor_right(pin_right_fwd, pin_right_rev);
 const int display_width = 96;
 const int display_height = 64;
 
-int speed_percent_sp = 50;
+float speed_m_s_sp = 0.25;
 
 class Goalpost {
 public:
@@ -235,7 +235,7 @@ public:
 
 
   bool intersection_ahead() {
-    int max_distance = 5;
+    int max_distance = 10;
     bool left_ahead = false;
     bool right_ahead = false;
     for (int i=0; i < max_distance && left[i] != 0; i++) {
@@ -304,9 +304,9 @@ public:
   void setup() {
     Serial.begin(115200);
     while(!Serial){}
-    Bluetooth.begin(9600);
+    bluetooth.begin(9600);
     Serial.print("waiting for Bluetooth...");
-    while(!Bluetooth){
+    while(!bluetooth){
       delay(1);
     }
     Serial.println("ready");
@@ -327,42 +327,130 @@ public:
 };
 
 VoltageDivider v_bat(pin_battery_voltage_divider, 463.1, 98.28);
-
-
-
-
 Adafruit_SSD1331 display = Adafruit_SSD1331(pin_oled_cs, pin_oled_dc, pin_oled_rst);
 
 float p = 3.1415926;
 const int t_delay=0;
 
 
+class Driver {
+  bool destination_pending = false;
+
+  float destination_meters = NAN;
+  float throttle = 0;
+  float velocity_k_p = 12.0;
+  float velocity_k_d = 100;
+  float last_error = 0;
+  float last_position_error = 0;
+  float velocity_max = 0;
+  float ratio_left;
+  float ratio_right;
+
+  float position_k_p = 10;
+  float position_k_d = 200;
+  float accel_m_s2 = 3;
+
+  float fwd_rev = sign_of(ratio_right); // 1 for forward, -1 for reverse
+
+  unsigned int last_execute_us;
+
+public:
+  void set_goal(float d, double velocity_max, float ratio_left = 1, float ratio_right = 1) {
+    this->ratio_right = ratio_right;
+    this->ratio_left = ratio_left;
+    this->velocity_max = velocity_max;
+    this->destination_meters = ratio_right * d + speedometer.get_odo_meters();
+    throttle = 0;
+    last_error = 0;
+    last_position_error = 0;
+    fwd_rev = sign_of(ratio_right); // 1 for forward, -1 for reverse
+    destination_pending = true;
+  }
+
+  void stop() {
+    destination_pending = false;
+  }
+
+  void execute() {
+    if(!destination_pending) {
+      motor_left.set_speed_percent(0);
+      motor_right.set_speed_percent(0);
+      return;
+    }
+
+    // assumes speedometer is current
+    float elapsed_ms = (micros() - last_execute_us) / 1000.;
+
+    float position_error = destination_meters - speedometer.get_odo_meters();
+    float velocity_sp = position_k_p * position_error + position_k_d * (position_error-last_position_error)/elapsed_ms;
+    //float velocity_sp = position_error > 0 ? sqrt(2 * position_error * accel_m_s2) : 0;
+    velocity_sp = constrain(velocity_sp, -velocity_max, velocity_max);
+
+    float error = velocity_sp - speedometer.velocity;
+    float d_error = error-last_error;
+    throttle += fwd_rev * (velocity_k_p * error + velocity_k_d * d_error) * elapsed_ms;
+    throttle = constrain(throttle, -100, 100);
+    //output += (String)position_error + " v: " + speedometer.velocity + " v_sp: " + velocity_sp + "gas: " + throttle + "\r\n";
+    motor_left.set_speed_percent(ratio_left * throttle);
+    motor_right.set_speed_percent(ratio_right * throttle);
+    last_error = error;
+    last_position_error = position_error;
+    last_execute_us = micros();
+
+    if (speedometer.get_odo_meters() * fwd_rev  < destination_meters * fwd_rev || fabs(speedometer.get_velocity()) > 0.005) {
+      destination_pending = true;
+    } else {
+      destination_pending = false;
+      bluetooth.println("goal");
+    }
+  }
+};
+
+Driver driver;
+
+
 // buffer must be big enough for command, arguments, terminiators and null
 char camera_command_buffer_[100];
 SerialCommands camera_commands(&Serial1, camera_command_buffer_, sizeof(camera_command_buffer_), (char *)"\r\n", (char *)" ");
 char bluetooth_command_buffer_[100];
-SerialCommands bluetooth_commands(&Bluetooth, bluetooth_command_buffer_, sizeof(bluetooth_command_buffer_), (char *)"\r\n", (char *)" ");
+SerialCommands bluetooth_commands(&bluetooth, bluetooth_command_buffer_, sizeof(bluetooth_command_buffer_), (char *)"\r\n", (char *)" ");
 
+const float max_meters = 1;
 
 void on_set_speed(SerialCommands * sender) {
-  speed_percent_sp = atoi(sender->Next());
+  speed_m_s_sp = atof(sender->Next());
 }
 
 void on_left(SerialCommands * sender) {
-  motor_left.set_speed_percent(-speed_percent_sp);
-  motor_right.set_speed_percent(speed_percent_sp);
+  driver.set_goal(max_meters, speed_m_s_sp, -1, 1);
+  bluetooth.println("ok");
 }
 
 void on_right(SerialCommands * sender) {
-  motor_left.set_speed_percent(speed_percent_sp);
-  motor_right.set_speed_percent(-speed_percent_sp);
+  driver.set_goal(max_meters, speed_m_s_sp, 1, -1);
+  bluetooth.println("ok");
 }
 
+void on_fwd(SerialCommands * sender) {
+  driver.set_goal(max_meters, speed_m_s_sp, 1, 1);
+  bluetooth.println("ok");
+}
+
+void on_rev(SerialCommands * sender) {
+  driver.set_goal(max_meters, speed_m_s_sp, -1, -1);
+  bluetooth.println("ok");
+}
+
+void on_stop(SerialCommands * sender) {
+  driver.stop();
+}
+
+
 void move(float d, double velocity_max, float ratio_left = 1, float ratio_right = 1) {
-  Bluetooth.println((String)"move "+ d + " " + ratio_left + " " + ratio_right);
+  bluetooth.println((String)"move "+ d + " " + ratio_left + " " + ratio_right);
   float destination_meters = ratio_right * d + speedometer.get_odo_meters();
   float throttle = 0;
-  float velocity_k_p = 12.0;
+  float velocity_k_p = 6.0;
   float velocity_k_d = 100;
   float last_error = 0;
   float last_position_error = 0;
@@ -378,7 +466,7 @@ void move(float d, double velocity_max, float ratio_left = 1, float ratio_right 
 
   while(speedometer.get_odo_meters() * fwd_rev  < destination_meters * fwd_rev || fabs(speedometer.get_velocity()) > 0.005) {
     delay(1);
-    speedometer.update();
+    speedometer.execute();
     loop();
 
     float position_error = destination_meters - speedometer.get_odo_meters();
@@ -399,8 +487,8 @@ void move(float d, double velocity_max, float ratio_left = 1, float ratio_right 
 
   motor_left.set_speed_percent(0);
   motor_right.set_speed_percent(0);
-  Bluetooth.println((String)"final velocity: " + speedometer.get_velocity());
-  Bluetooth.println((String)"distance error: " + (destination_meters - speedometer.get_odo_meters()));
+  bluetooth.println((String)"final velocity: " + speedometer.get_velocity());
+  bluetooth.println((String)"distance error: " + (destination_meters - speedometer.get_odo_meters()));
 }
 
 void on_turn(SerialCommands * sender) {
@@ -424,30 +512,12 @@ void on_go(SerialCommands * sender) {
 }
 
 void on_go_intersection(SerialCommands * sender) {
-  motor_left.set_speed_percent(50);
-  motor_right.set_speed_percent(50);
+  driver.set_goal(5.0, speed_m_s_sp);
   while(!goalpost.intersection_ahead()) {
     loop();
   }
-  move(0.105, 0.5);
-  motor_left.set_speed_percent(0);
-  motor_right.set_speed_percent(0);
-}
-
-
-void on_fwd(SerialCommands * sender) {
-  motor_left.set_speed_percent(speed_percent_sp);
-  motor_right.set_speed_percent(speed_percent_sp);
-}
-
-void on_rev(SerialCommands * sender) {
-  motor_left.set_speed_percent(-speed_percent_sp);
-  motor_right.set_speed_percent(-speed_percent_sp);
-}
-
-void on_stop(SerialCommands * sender) {
-  motor_left.set_speed_percent(0);
-  motor_right.set_speed_percent(0);
+  
+  driver.set_goal(0.105, speed_m_s_sp);
 }
 
 
@@ -552,7 +622,7 @@ void setup(void) {
   camera_commands.SetDefaultHandler(on_unrecognized);
   camera_commands.AddCommand(&cmd_colors_sensed);
 
-  Bluetooth.begin(9600);
+  bluetooth.begin(9600);
   bluetooth_commands.AddCommand(&cmd_go);
   bluetooth_commands.AddCommand(&cmd_go_intersection);
   bluetooth_commands.AddCommand(&cmd_turn);
@@ -590,8 +660,8 @@ class Tile {
 class LoopChecker {
   public:
 
-    // execute run on the top of every loop
-    void run() {
+    // execute on the top of every loop
+    void execute() {
         last_loop_ms = loop_ms;
         loop_ms = millis();
         ++loop_count;
@@ -608,105 +678,16 @@ LoopChecker loop_checker;
 
 
 void loop() {
-  static int run_mode = 0;
-  const int run_mode_count = 12;
-  
-  loop_checker.run();
+  loop_checker.execute();
   camera_commands.ReadSerial();
   bluetooth_commands.ReadSerial();
-  //bool boundary_1_s = loop_checker.every_n_ms(1000);
-  bool boundary_10_ms = loop_checker.every_n_ms(10);
-  bool boundary_100_ms = loop_checker.every_n_ms(100);
 
-  if(boundary_10_ms) {
-    speedometer.update();
+  if(loop_checker.every_n_ms(1)) {
+    speedometer.execute();
+    driver.execute();
   }
 
-  if(boundary_100_ms) {
-    if(button1.was_clicked()) {
-      run_mode = (run_mode+1)%run_mode_count;
-
-      switch (run_mode) {
-        case 0:
-          motor_left.set_speed_percent(0);
-          motor_right.set_speed_percent(0);
-          break;
-          
-        case 1:
-          motor_left.set_speed_percent(100);
-          motor_right.set_speed_percent(100);
-          break;
-          
-        case 2:
-          motor_left.set_speed_percent(0);
-          motor_right.set_speed_percent(0);
-          break;
-          
-        case 3:
-          motor_left.set_speed_percent(-100);
-          motor_right.set_speed_percent(-100);
-          break;
-          
-        case 4:
-          motor_left.set_speed_percent(0);
-          motor_right.set_speed_percent(0);
-          break;
-
-        case 5:
-          motor_left.set_speed_percent(-100);
-          motor_right.set_speed_percent(100);
-          break;
-
-        case 6:
-          motor_left.set_speed_percent(0);
-          motor_right.set_speed_percent(0);
-          break;
-          
-        case 7:
-          motor_left.set_speed_percent(100);
-          motor_right.set_speed_percent(-100);
-          break;
-          
-        case 8:
-          motor_left.set_speed_percent(0);
-          motor_right.set_speed_percent(0);
-          break;
-          
-        case 9:
-          motor_left.set_speed_percent(100);
-          motor_right.set_speed_percent(50);
-          break;
-          
-        case 10:
-          motor_left.set_speed_percent(0);
-          motor_right.set_speed_percent(0);
-          break;
-          
-        case 11:
-          motor_left.set_speed_percent(50);
-          motor_right.set_speed_percent(100);
-          break;
-          
-        default:
-          motor_left.set_speed_percent(0);
-          motor_right.set_speed_percent(0);
-          break;
-        
-      }
-    }
-  }
-
-
-  
-
-/*
-  if(second_boundary) {
-    drawTile(0,0);
-    drawTile(50,0);
-  }
-*/
-  if(boundary_100_ms) {
-    //display.fillScreen(GRAY);
+  if(loop_checker.every_n_ms(100)) {
     display.setCursor(10,10);
     String v_string = (String)v_bat.get_voltage()+"v " + speedometer.velocity + " "; // space helps drawing issues
     int16_t x1,y1;
@@ -715,7 +696,6 @@ void loop() {
       &x1, &y1, &w, &h);
     display.fillRect(x1,y1,w,h,GRAY);
     display.print(v_string);
-    Serial.println((String)"Loop count: " + loop_checker.loop_count);
   }
 }
 
