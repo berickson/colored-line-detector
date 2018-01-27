@@ -329,16 +329,16 @@ public:
 
   float destination_meters = NAN;
   float throttle = 0;
-  float velocity_k_p = 12.0;
+  float velocity_k_p = 3.0;
   float velocity_k_d = 100;
+  float position_k_p = 20;
+  float position_k_d = 200;
   float last_error = 0;
   float last_position_error = 0;
   float velocity_max = 0;
   float ratio_left;
   float ratio_right;
 
-  float position_k_p = 10;
-  float position_k_d = 200;
   float accel_m_s2 = 3;
 
   float fwd_rev = sign_of(ratio_right); // 1 for forward, -1 for reverse
@@ -456,37 +456,40 @@ void on_help(SerialCommands * sender) {
 
 void on_set(SerialCommands * sender) {
   String param = sender->Next();
-  if(param == "") {
-    bluetooth.println((String)"velocity_k_p: " + driver.velocity_k_p);
-    bluetooth.println((String)"velocity_k_d: " + driver.velocity_k_d);
-    bluetooth.println((String)"position_k_p: " + driver.position_k_p);
-    bluetooth.println((String)"position_k_d: " + driver.position_k_d);
-  }
 
   String param2 = sender->Next();
-  if(param2 == "") {
-    bluetooth.println("invalid value");
-    return;
-  }
-  double value = atof(param2.c_str());
-  if (value < 0 || value == NAN) {
-    bluetooth.println("invalid value");
-    return;
+  if(param) {
+    if(param2 == "") {
+      bluetooth.println("invalid value");
+      return;
+    } else {
+      double value = atof(param2.c_str());
+      if (value < 0 || value == NAN) {
+        bluetooth.println("invalid value");
+        return;
+      } else {
+        if(param == "") {
+          // do nothing if there is no first parameter
+        } else if (param == "velocity_k_p" || param == "vkp") {
+          driver.velocity_k_p = value;
+        } else if (param == "velocity_k_d" || param == "vkd") {
+          driver.velocity_k_d = value;
+        } else if (param == "position_k_p" || param == "xkp") {
+          driver.position_k_p = value;
+        } else if (param == "position_k_d" || param == "xkd") {
+          driver.position_k_d = value;
+        } else {
+          bluetooth.println("invalid parameter " + param);
+          return;
+        }
+      }
+    }
   }
 
-  if (param == "velocity_k_p") {
-    driver.velocity_k_p = value;
-  } else if (param == "velocity_k_d") {
-    driver.velocity_k_d = value;
-  } else if (param == "position_k_p") {
-    driver.position_k_p = value;
-  } else if (param == "position_k_d") {
-    driver.position_k_d = value;
-  } else {
-    bluetooth.println("invalid parameter " + param);
-    return;
-  }
-
+  bluetooth.println((String)"velocity_k_p (vkp): " + driver.velocity_k_p);
+  bluetooth.println((String)"velocity_k_d (vkd): " + driver.velocity_k_d);
+  bluetooth.println((String)"position_k_p (xkp): " + driver.position_k_p);
+  bluetooth.println((String)"position_k_d (xkd: " + driver.position_k_d);
 
   bluetooth.println("ok");
 }
