@@ -17,7 +17,7 @@ const int pin_right_a = 17;
 const int pin_right_b = 16;
 
 const int pin_left_a = 15;
-const int pin_left_b = 4;
+const int pin_left_b = 14;
 const int pin_battery_voltage_divider = A9;
 
 #define bluetooth Serial3
@@ -146,7 +146,9 @@ public:
 
 
 QuadratureEncoder right_encoder(pin_right_a, pin_right_b);
-Speedometer speedometer(right_encoder, 1./4500);
+Speedometer right_speedometer(right_encoder, 1./4500);
+QuadratureEncoder left_encoder(pin_left_a, pin_left_b);
+Speedometer left_speedometer(left_encoder, 1./4500 / 1.585);
 
 // unfortunatly, we need external callbacks
 void on_right_a_changed () {
@@ -155,6 +157,14 @@ void on_right_a_changed () {
 
 void on_right_b_changed () {
   right_encoder.on_b_changed();
+}
+
+void on_left_a_changed () {
+  left_encoder.on_a_changed();
+}
+
+void on_left_b_changed () {
+  left_encoder.on_b_changed();
 }
 
 
@@ -177,6 +187,8 @@ class Motor {
       analogWriteFrequency(pin_rev, pwm_frequency);
       attachInterrupt(right_encoder.pin_a, on_right_a_changed, CHANGE);
       attachInterrupt(right_encoder.pin_b, on_right_b_changed, CHANGE);
+      attachInterrupt(left_encoder.pin_a, on_left_a_changed, CHANGE);
+      attachInterrupt(left_encoder.pin_b, on_left_b_changed, CHANGE);
     }
 
     void set_speed_raw(int speed) {
@@ -327,12 +339,16 @@ class Driver {
 public:
   bool destination_pending = false;
 
-  float destination_meters = NAN;
+  float right_destination_meters = NAN;
+  float left_destination_meters = NAN;
+  float right_start_meters = NAN;
+  float left_start_meters = NAN;
   float throttle = 0;
   float velocity_k_p = 3.0;
   float velocity_k_d = 100;
   float position_k_p = 20;
   float position_k_d = 200;
+  float k_diff = position_k_d;
   float last_error = 0;
   float last_position_error = 0;
   float velocity_max = 0;
@@ -350,7 +366,10 @@ public:
     this->ratio_right = ratio_right;
     this->ratio_left = ratio_left;
     this->velocity_max = velocity_max;
-    this->destination_meters = ratio_right * d + speedometer.get_odo_meters();
+    this->left_start_meters = left_speedometer.get_odo_meters();
+    this->right_start_meters = right_speedometer.get_odo_meters();
+    this->right_destination_meters = ratio_right * d + this->right_start_meters;
+    this->left_destination_meters = ratio_left * d + this->left_start_meters;
     throttle = 0;
     last_error = 0;
     last_position_error = 0;
@@ -372,23 +391,36 @@ public:
     // assumes speedometer is current
     float elapsed_ms = (micros() - last_execute_us) / 1000.;
 
-    float position_error = destination_meters - speedometer.get_odo_meters();
+    float position_error = right_destination_meters - right_speedometer.get_odo_meters();
     float velocity_sp = position_k_p * position_error + position_k_d * (position_error-last_position_error)/elapsed_ms;
     //float velocity_sp = position_error > 0 ? sqrt(2 * position_error * accel_m_s2) : 0;
     velocity_sp = constrain(velocity_sp, -velocity_max, velocity_max);
 
-    float error = velocity_sp - speedometer.velocity;
+    float error = velocity_sp - right_speedometer.velocity;
     float d_error = error-last_error;
     throttle += fwd_rev * (velocity_k_p * error + velocity_k_d * d_error) * elapsed_ms;
     throttle = constrain(throttle, -100, 100);
     //output += (String)position_error + " v: " + speedometer.velocity + " v_sp: " + velocity_sp + "gas: " + throttle + "\r\n";
-    motor_left.set_speed_percent(ratio_left * throttle);
+
     motor_right.set_speed_percent(ratio_right * throttle);
+
+    // set a correction in the left motor based on how far off it is compared to the right motor
+    float left_error = 0;
+    {
+      float right_travelled = right_speedometer.get_odo_meters() - right_start_meters;
+      float left_travelled = left_speedometer.get_odo_meters() - left_start_meters;
+      float left_expected = right_travelled * ratio_right / ratio_left;
+      left_error = left_expected - left_travelled;
+    }
+
+    motor_right.set_speed_percent(ratio_right * throttle - left_error * k_diff);
+    motor_left.set_speed_percent(ratio_left * throttle + left_error * k_diff);
+
     last_error = error;
     last_position_error = position_error;
     last_execute_us = micros();
 
-    if (speedometer.get_odo_meters() * fwd_rev  < destination_meters * fwd_rev || fabs(speedometer.get_velocity()) > 0.005) {
+    if (right_speedometer.get_odo_meters() * fwd_rev  < right_destination_meters * fwd_rev || fabs(right_speedometer.get_velocity()) > 0.02) {
       destination_pending = true;
     } else {
       destination_pending = false;
@@ -442,7 +474,7 @@ void on_turn(SerialCommands * sender) {
   // turns anticlockwise distance d
   sender->GetSerial()->println("inside turn");
   float degrees = atof(sender->Next());
-  float meters_per_degree = 0.14/90.;
+  float meters_per_degree = 0.13/90.;
   float d = degrees * meters_per_degree;
   float velocity_max = atof(sender->Next());
   int ccw_cw = sign_of(d);
@@ -701,13 +733,15 @@ void loop() {
   bluetooth_commands.ReadSerial();
 
   if(loop_checker.every_n_ms(1)) {
-    speedometer.execute();
+    right_speedometer.execute();
+    left_speedometer.execute();
     driver.execute();
   }
 
   if(loop_checker.every_n_ms(100)) {
     display.setCursor(10,10);
-    String v_string = (String)v_bat.get_voltage()+"v " + speedometer.velocity + " "; // space helps drawing issues
+    //String v_string = (String)left_speedometer.velocity + " " + right_speedometer.velocity+ " "; // space helps drawing issues
+    String v_string = (String)left_speedometer.get_odo_meters() + " " + right_speedometer.get_odo_meters()+ " "; // space helps drawing issues
     int16_t x1,y1;
     uint16_t h, w;
     display.getTextBounds((char *)v_string.c_str(), 10, 10,
