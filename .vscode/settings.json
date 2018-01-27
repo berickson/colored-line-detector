@@ -11,7 +11,8 @@
         "initializer_list": "cpp",
         "utility": "cpp",
         "rope": "cpp",
-        "slist": "cpp"
+        "slist": "cpp",
+        "random": "cpp"
     },
     "arduino.path":"/home/brian/arduino-1.8.3/"
 }

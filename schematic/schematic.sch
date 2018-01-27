@@ -43,34 +43,34 @@ Title "Colored Line Following Robot"
 Date ""
 Rev "0"
 Comp "Brian Erickson"
-Comment1 "comment 1"
-Comment2 "comment 2"
-Comment3 "comment 3"
+Comment1 ""
+Comment2 ""
+Comment3 ""
 Comment4 ""
 $EndDescr
 Text GLabel 6250 4500 0    60   Input ~ 0
 LMotor-
 Text GLabel 6250 5000 0    60   Input ~ 0
 LMotor+
-Text GLabel 6250 4600 0    60   Input ~ 0
-GND
-Text GLabel 6250 4700 0    60   Input ~ 0
-3V3
-Text GLabel 6250 4800 0    60   Input ~ 0
-LEncoderA
 Text GLabel 6250 4900 0    60   Input ~ 0
+GND
+Text GLabel 6250 4600 0    60   Input ~ 0
+3V3
+Text GLabel 6250 4700 0    60   Input ~ 0
+LEncoderA
+Text GLabel 6250 4800 0    60   Input ~ 0
 LEncoderB
 Text GLabel 7900 4500 0    60   Input ~ 0
 RMotor-
 Text GLabel 7900 5000 0    60   Input ~ 0
 LMotor+
-Text GLabel 7900 4600 0    60   Input ~ 0
-GND
-Text GLabel 7900 4700 0    60   Input ~ 0
-3V3
-Text GLabel 7900 4800 0    60   Input ~ 0
-REncoderA
 Text GLabel 7900 4900 0    60   Input ~ 0
+GND
+Text GLabel 7900 4600 0    60   Input ~ 0
+3V3
+Text GLabel 7900 4700 0    60   Input ~ 0
+REncoderA
+Text GLabel 7900 4800 0    60   Input ~ 0
 REncoderB
 Text GLabel 2500 6100 1    60   Input ~ 0
 GND
@@ -209,9 +209,9 @@ Text GLabel 5950 2800 2    60   Input ~ 0
 LEncoderA
 Text GLabel 5950 2900 2    60   Input ~ 0
 LEncoderB
-Text GLabel 3300 2500 0    60   Input ~ 0
+Text GLabel 5950 2600 2    60   Input ~ 0
 REncoderA
-Text GLabel 3300 2600 0    60   Input ~ 0
+Text GLabel 5950 2700 2    60   Input ~ 0
 REncoderB
 NoConn ~ 5950 1800
 $Comp
@@ -411,4 +411,27 @@ Wire Wire Line
 	2600 4000 3300 4000
 Wire Wire Line
 	3300 3800 3000 3800
+Text GLabel 3300 2500 0    60   Input ~ 0
+BT_TX
+Text GLabel 3300 2600 0    60   Input ~ 0
+BT_RX
+$Comp
+L HM-10-BLUETOOTH BLUETOOTH?
+U 1 1 5A6C158D
+P 4600 5000
+F 0 "BLUETOOTH?" H 4550 5350 60  0000 C CNN
+F 1 "HM-10-BLUETOOTH" H 4600 4650 60  0000 C CNN
+F 2 "" H 4500 4800 60  0001 C CNN
+F 3 "" H 4500 4800 60  0001 C CNN
+	1    4600 5000
+	1    0    0    -1  
+$EndComp
+Text GLabel 4300 4950 0    60   Input ~ 0
+BT_TX
+Text GLabel 4300 4850 0    60   Input ~ 0
+BT_RX
+Text GLabel 4300 5150 0    60   Input ~ 0
+3V3
+Text GLabel 4300 5050 0    60   Input ~ 0
+GND
 $EndSCHEMATC
