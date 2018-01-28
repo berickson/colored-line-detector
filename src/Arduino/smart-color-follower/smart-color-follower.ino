@@ -239,8 +239,86 @@ const int display_height = 64;
 
 float speed_m_s_sp = 0.25;
 
+
 class Goalpost {
 public:
+  struct TopColor {
+    char color = '.';
+    uint16_t count = 0;
+  };
+
+  struct RgbCounts {
+    uint16_t r;
+    uint16_t g;
+    uint16_t b;
+    uint16_t k;
+    uint16_t w;
+
+    void print() {
+      bluetooth.println((String)"r:"+r+ " g:" + g + "b:" + b + " k: " + k + " w:"+ w );
+    }
+
+    void reset() {
+      *this = {0};
+    }
+
+    void add_reading(String colors) {
+      uint16_t max_i = colors.length();
+      for (int i = 0; i < max_i; ++i) {
+        char c = colors[i];
+        switch(c) {
+          case 'r':
+            ++r;
+            break;
+          case 'g':
+            ++g;
+            break;
+          case 'b':
+            ++b;
+            break;
+          case 'k':
+            ++k;
+            break;
+          case '.':
+            ++w;
+            break;
+          default:
+            break;
+        }
+      }
+    }
+
+    TopColor top_color() {
+      TopColor top;
+      if(r > top.count) {
+        top.color = 'r';
+        top.count = r;
+      }
+      if(g > top.count) {
+        top.color = 'g';
+        top.count = g;
+      }
+      if(b > top.count) {
+        top.color = 'b';
+        top.count = b;
+      }
+      if(k > top.count) {
+        top.color = 'k';
+        top.count = k;
+      }
+      return top;
+    }
+  };
+
+  void print_color_counts() {
+    bluetooth.println("left:");
+    left_counts.print();
+    bluetooth.println("right:");
+    right_counts.print();
+  }
+
+  RgbCounts left_counts, right_counts;
+
   String left;
   String right;
   String bottom;
@@ -268,6 +346,20 @@ public:
       return true;
     }
     return false;
+  }
+
+  void reset_color_counts() {
+    left_counts.reset();
+    right_counts.reset();
+  }
+
+  void set_colors(const char * left, const char * right, const char * bottom) {
+    this->left = left;
+    this->right = right;
+    this->bottom = bottom;
+
+    left_counts.add_reading(this->left);
+    right_counts.add_reading(this->right);
   }
 
 } goalpost;
@@ -381,6 +473,13 @@ public:
     g_stop = false;
   }
 
+  void turn_degrees(float degrees, float velocity_max) {
+    float meters_per_degree = 0.13/90.;
+    float d = degrees * meters_per_degree;
+    int ccw_cw = sign_of(d);
+    set_goal(fabs(d), velocity_max, -ccw_cw, ccw_cw);
+  }
+
   void stop() {
     destination_pending = false;
   }
@@ -444,26 +543,51 @@ class Planner {
 public:
   enum PlannerState {
     idle,
-    looking_for_intersection
+    looking_for_intersection,
+    driving_to_intersection,
+    waiting_for_turn
   } state;
+  char next_color;
 
-  void go_intersection() {
+  void go_intersection(String color) {
+    if(color.length() == 1) {
+      next_color = color[0];
+    }
     driver.set_goal(5.0, speed_m_s_sp);
     state = looking_for_intersection;
   }
 
   void execute() {
-    if(g_stop) {
+    if (g_stop) {
       state = idle;
       return;
     }
-    if(state==idle) {
+    if (state==idle) {
       return;
     }
-    if(state == looking_for_intersection) {
+    if (state == looking_for_intersection) {
       if(goalpost.intersection_ahead()) {
+        goalpost.reset_color_counts();
         driver.set_goal(0.125, speed_m_s_sp);
+        state = driving_to_intersection;
+      }
+    }
+    if (state == driving_to_intersection) {
+      if (!driver.destination_pending) {
+        goalpost.print_color_counts();
+        // turn to direction of next color
+        if (goalpost.left_counts.top_color().color == next_color) {
+          driver.turn_degrees(90, speed_m_s_sp);
+        } else if (goalpost.right_counts.top_color().color == next_color) {
+          driver.turn_degrees(-90, speed_m_s_sp);
+        }
+        state = waiting_for_turn;
+      }
+    }
+    if (state == waiting_for_turn) {
+      if (!driver.destination_pending) {
         state = idle;
+        bluetooth.println("planner done");
       }
     }
   }
@@ -515,11 +639,7 @@ void on_turn(SerialCommands * sender) {
   // turns anticlockwise distance d
   sender->GetSerial()->println("inside turn");
   float degrees = atof(sender->Next());
-  float meters_per_degree = 0.13/90.;
-  float d = degrees * meters_per_degree;
-  float velocity_max = atof(sender->Next());
-  int ccw_cw = sign_of(d);
-  driver.set_goal(fabs(d), velocity_max, -ccw_cw, ccw_cw);
+  driver.turn_degrees(degrees, speed_m_s_sp);
   bluetooth.println("ok");
 }
 
@@ -571,14 +691,13 @@ void on_set(SerialCommands * sender) {
 void on_go(SerialCommands * sender) {
   const char * param1 = sender->Next();
   float d = atof(param1);
-  float velocity_max = atof(sender->Next());
-
-  driver.set_goal(d, velocity_max);
+  driver.set_goal(d, speed_m_s_sp);
   bluetooth.println("ok");
 }
 
 void on_go_intersection(SerialCommands * sender) {
-  planner.go_intersection();
+  String color = sender->Next();
+  planner.go_intersection(color);
   return;
 }
 
@@ -599,9 +718,7 @@ void on_colors_sensed(SerialCommands * sender) {
     // invalid colors
     return;
   }
-  goalpost.left = left;
-  goalpost.right = right;
-  goalpost.bottom = bottom;
+  goalpost.set_colors(left, right, bottom);
   
   show_goalpost(bottom, left, right);
 }
