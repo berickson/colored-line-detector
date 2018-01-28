@@ -20,6 +20,8 @@ const int pin_left_a = 15;
 const int pin_left_b = 14;
 const int pin_battery_voltage_divider = A9;
 
+bool g_stop = false;
+
 #define bluetooth Serial3
 
 float sign_of(float i) {
@@ -246,16 +248,17 @@ public:
 
 
   bool intersection_ahead() {
-    int max_distance = 10;
+    unsigned int max_distance = 10;
     bool left_ahead = false;
     bool right_ahead = false;
-    for (int i=0; i < max_distance && left[i] != 0; i++) {
+    unsigned int end_i = std::min(std::min(max_distance, left.length()),right.length());
+    for (unsigned int i=0; i < end_i && left[i] != 0; i++) {
       if (left[i] != '.') {
         left_ahead = true;
         break;
       }
     }
-    for (int i=0; i < max_distance && right[i] != 0; i++) {
+    for (unsigned int i=0; i < end_i && right[i] != 0; i++) {
       if (right[i] != '.') {
         right_ahead = true;
         break;
@@ -375,6 +378,7 @@ public:
     last_position_error = 0;
     fwd_rev = sign_of(ratio_right); // 1 for forward, -1 for reverse
     destination_pending = true;
+    g_stop = false;
   }
 
   void stop() {
@@ -382,6 +386,9 @@ public:
   }
 
   void execute() {
+    if(g_stop) {
+      destination_pending = false;
+    }
     if(!destination_pending) {
       motor_left.set_speed_percent(0);
       motor_right.set_speed_percent(0);
@@ -433,6 +440,37 @@ public:
 
 Driver driver;
 
+class Planner {
+public:
+  enum PlannerState {
+    idle,
+    looking_for_intersection
+  } state;
+
+  void go_intersection() {
+    driver.set_goal(5.0, speed_m_s_sp);
+    state = looking_for_intersection;
+  }
+
+  void execute() {
+    if(g_stop) {
+      state = idle;
+      return;
+    }
+    if(state==idle) {
+      return;
+    }
+    if(state == looking_for_intersection) {
+      if(goalpost.intersection_ahead()) {
+        driver.set_goal(0.125, speed_m_s_sp);
+        state = idle;
+      }
+    }
+  }
+};
+
+Planner planner;
+
 
 // buffer must be big enough for command, arguments, terminators and null
 char camera_command_buffer_[100];
@@ -469,7 +507,8 @@ void on_rev(SerialCommands * sender) {
 
 void on_stop(SerialCommands * sender) {
   driver.stop();
-  bluetooth.println("ok");
+  g_stop = true;
+  sender->GetSerial()->println("ok");
 }
 
 void on_turn(SerialCommands * sender) {
@@ -539,12 +578,8 @@ void on_go(SerialCommands * sender) {
 }
 
 void on_go_intersection(SerialCommands * sender) {
-  driver.set_goal(5.0, speed_m_s_sp);
-  while(!goalpost.intersection_ahead()) {
-    loop();
-  }
-  
-  driver.set_goal(0.105, speed_m_s_sp);
+  planner.go_intersection();
+  return;
 }
 
 
@@ -737,6 +772,7 @@ void loop() {
   if(loop_checker.every_n_ms(1)) {
     right_speedometer.execute();
     left_speedometer.execute();
+    planner.execute();
     driver.execute();
   }
 
