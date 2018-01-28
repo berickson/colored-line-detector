@@ -12,7 +12,9 @@
         "utility": "cpp",
         "rope": "cpp",
         "slist": "cpp",
-        "random": "cpp"
+        "random": "cpp",
+        "cmath": "cpp",
+        "complex": "cpp"
     },
     "arduino.path":"/home/brian/arduino-1.8.3/"
 }
