@@ -348,7 +348,7 @@ public:
   float velocity_k_d = 100;
   float position_k_p = 20;
   float position_k_d = 200;
-  float k_diff = position_k_d;
+  float k_diff = position_k_d * 15;
   float last_error = 0;
   float last_position_error = 0;
   float velocity_max = 0;
@@ -402,7 +402,7 @@ public:
     throttle = constrain(throttle, -100, 100);
     //output += (String)position_error + " v: " + speedometer.velocity + " v_sp: " + velocity_sp + "gas: " + throttle + "\r\n";
 
-    motor_right.set_speed_percent(ratio_right * throttle);
+    //motor_right.set_speed_percent(ratio_right * throttle);
 
     // set a correction in the left motor based on how far off it is compared to the right motor
     float left_error = 0;
@@ -413,8 +413,10 @@ public:
       left_error = left_expected - left_travelled;
     }
 
+    // motor_right.set_speed_percent(ratio_right * throttle - left_error * k_diff);
     motor_right.set_speed_percent(ratio_right * throttle - left_error * k_diff);
     motor_left.set_speed_percent(ratio_left * throttle + left_error * k_diff);
+    //motor_left.set_speed_percent(left_error * k_diff);
 
     last_error = error;
     last_position_error = position_error;
