@@ -36,6 +36,14 @@ int sign_of(int i) {
   return 1;
 }
 
+struct Settings {
+  float velocity_k_p = 3.0;
+  float velocity_k_d = 100;
+  float position_k_p = 20;
+  float position_k_d = 200;
+};
+Settings settings;
+
 class QuadratureEncoder {
 public:
   const int pin_a;
@@ -442,6 +450,63 @@ float p = 3.1415926;
 const int t_delay=0;
 
 
+struct WheelPID {
+  Speedometer & speedometer;
+  unsigned long last_execute_us = 0;
+  float last_velocity_error;
+  float throttle;
+  float last_position_error;
+  float start_meters;
+  float destination_meters;
+  float velocity_max;
+  WheelPID(Speedometer & speedometer) :
+    speedometer(speedometer), 
+    last_execute_us(0),
+    last_velocity_error(NAN),
+    throttle(0),
+    last_position_error(NAN),
+    start_meters(NAN),
+    velocity_max(speed_m_s_sp) {
+  }
+
+  void set_goal(unsigned long us, float d, double velocity_max) {
+    last_execute_us = us;
+    start_meters = speedometer.get_odo_meters();
+    destination_meters = start_meters + d;
+    this->velocity_max = velocity_max;
+    last_velocity_error = 0;
+    last_position_error = d;
+  }
+
+
+  float execute(unsigned long us) {
+    float elapsed_ms = (us - last_execute_us) / 1000.;
+    float position_error = destination_meters - speedometer.get_odo_meters();
+    float velocity_sp = settings.position_k_p * position_error;
+    if (last_position_error != NAN) {
+      velocity_sp += settings.position_k_d * (position_error-last_position_error);
+    }
+    velocity_sp = constrain(velocity_sp, -velocity_max, velocity_max);
+
+    float velocity_error = velocity_sp - speedometer.velocity;
+    float d_error = velocity_error - last_velocity_error;
+    throttle += (settings.velocity_k_p * velocity_error + settings.velocity_k_d * d_error) * elapsed_ms;
+    throttle = constrain(throttle, -100, 100);
+    last_execute_us = us;
+    last_position_error = position_error;
+    last_velocity_error = velocity_error;
+    return throttle;
+  }
+
+  bool done() {
+    float p_error = fabs(destination_meters - speedometer.get_odo_meters());
+    float v_error = fabs(speedometer.get_velocity());
+    return p_error < 0.01 && v_error < 0.01;
+  }
+};
+WheelPID left_wheel(left_speedometer);
+WheelPID right_wheel(right_speedometer);
+
 class Driver {
 public:
   bool destination_pending = false;
@@ -451,11 +516,8 @@ public:
   float right_start_meters = NAN;
   float left_start_meters = NAN;
   float throttle = 0;
-  float velocity_k_p = 3.0;
-  float velocity_k_d = 100;
-  float position_k_p = 20;
-  float position_k_d = 200;
-  float k_diff = position_k_d * 15;
+
+  float k_diff = settings.position_k_d * 15;
   float last_error = 0;
   float last_position_error = 0;
   float velocity_max = 0;
@@ -467,6 +529,8 @@ public:
   float fwd_rev = sign_of(ratio_right); // 1 for forward, -1 for reverse
 
   unsigned int last_execute_us;
+
+  
 
 public:
   void set_goal(float d, double velocity_max, float ratio_left = 1, float ratio_right = 1) {
@@ -483,6 +547,8 @@ public:
     fwd_rev = sign_of(ratio_right); // 1 for forward, -1 for reverse
     destination_pending = true;
     g_stop = false;
+    right_wheel.set_goal(micros(), ratio_right * d, velocity_max);
+    left_wheel.set_goal(micros(), ratio_left * d, velocity_max);
   }
 
   void turn_degrees(float degrees, float velocity_max) {
@@ -496,6 +562,7 @@ public:
     destination_pending = false;
   }
 
+
   void execute() {
     if(g_stop) {
       destination_pending = false;
@@ -506,21 +573,18 @@ public:
       return;
     }
 
-    // assumes speedometer is current
-    float elapsed_ms = (micros() - last_execute_us) / 1000.;
 
+    // assumes speedometer is current
+    unsigned long us = micros();
+    float elapsed_ms = (us - last_execute_us) / 1000.;
     float position_error = right_destination_meters - right_speedometer.get_odo_meters();
-    float velocity_sp = position_k_p * position_error + position_k_d * (position_error-last_position_error)/elapsed_ms;
-    //float velocity_sp = position_error > 0 ? sqrt(2 * position_error * accel_m_s2) : 0;
+    float velocity_sp = settings.position_k_p * position_error + settings.position_k_d * (position_error-last_position_error)/elapsed_ms;
     velocity_sp = constrain(velocity_sp, -velocity_max, velocity_max);
 
     float error = velocity_sp - right_speedometer.velocity;
     float d_error = error-last_error;
-    throttle += fwd_rev * (velocity_k_p * error + velocity_k_d * d_error) * elapsed_ms;
+    throttle += fwd_rev * (settings.  velocity_k_p * error + settings.velocity_k_d * d_error) * elapsed_ms;
     throttle = constrain(throttle, -100, 100);
-    //output += (String)position_error + " v: " + speedometer.velocity + " v_sp: " + velocity_sp + "gas: " + throttle + "\r\n";
-
-    //motor_right.set_speed_percent(ratio_right * throttle);
 
     // set a correction in the left motor based on how far off it is compared to the right motor
     float left_error = 0;
@@ -532,19 +596,34 @@ public:
     }
 
     // motor_right.set_speed_percent(ratio_right * throttle - left_error * k_diff);
-    motor_right.set_speed_percent(ratio_right * throttle - left_error * k_diff);
-    motor_left.set_speed_percent(ratio_left * throttle + left_error * k_diff);
+    //motor_right.set_speed_percent(ratio_right * throttle - left_error * k_diff);
+    //motor_left.set_speed_percent(ratio_left * throttle + left_error * k_diff);
+    
+    //k_diff = 0;
+    motor_right.set_speed_percent(right_wheel.execute(us)- left_error * k_diff);
+    motor_left.set_speed_percent( left_wheel.execute(us) + left_error * k_diff);
+    //motor_right.set_speed_percent(20);
+    //motor_left.set_speed_percent(20);
+
+    
     //motor_left.set_speed_percent(left_error * k_diff);
 
     last_error = error;
     last_position_error = position_error;
     last_execute_us = micros();
-
+/*
     if (right_speedometer.get_odo_meters() * fwd_rev  < right_destination_meters * fwd_rev || fabs(right_speedometer.get_velocity()) > 0.02) {
       destination_pending = true;
     } else {
       destination_pending = false;
       bluetooth.println("goal");
+    }
+*/
+    if (left_wheel.done() && right_wheel.done()) {
+      destination_pending = false;
+      bluetooth.println("goal");
+    } else {
+      destination_pending = true;
     }
   }
 };
@@ -714,13 +793,13 @@ void on_set(SerialCommands * sender) {
         if(param == "") {
           // do nothing if there is no first parameter
         } else if (param == "velocity_k_p" || param == "vkp") {
-          driver.velocity_k_p = value;
+          settings.velocity_k_p = value;
         } else if (param == "velocity_k_d" || param == "vkd") {
-          driver.velocity_k_d = value;
+          settings.velocity_k_d = value;
         } else if (param == "position_k_p" || param == "xkp") {
-          driver.position_k_p = value;
+          settings.position_k_p = value;
         } else if (param == "position_k_d" || param == "xkd") {
-          driver.position_k_d = value;
+          settings.position_k_d = value;
         } else {
           bluetooth.println("invalid parameter " + param);
           return;
@@ -729,10 +808,10 @@ void on_set(SerialCommands * sender) {
     }
   }
 
-  bluetooth.println((String)"velocity_k_p (vkp): " + driver.velocity_k_p);
-  bluetooth.println((String)"velocity_k_d (vkd): " + driver.velocity_k_d);
-  bluetooth.println((String)"position_k_p (xkp): " + driver.position_k_p);
-  bluetooth.println((String)"position_k_d (xkd: " + driver.position_k_d);
+  bluetooth.println((String)"velocity_k_p (vkp): " + settings.velocity_k_p);
+  bluetooth.println((String)"velocity_k_d (vkd): " + settings.velocity_k_d);
+  bluetooth.println((String)"position_k_p (xkp): " + settings.position_k_p);
+  bluetooth.println((String)"position_k_d (xkd: " + settings.position_k_d);
 
   bluetooth.println("ok");
 }
@@ -953,9 +1032,9 @@ void loop() {
 
   if(loop_checker.every_n_ms(100)) {
     display.setCursor(10,10);
-    //String v_string = (String)left_speedometer.velocity + " " + right_speedometer.velocity+ " "; // space helps drawing issues
+    String v_string = (String)left_speedometer.velocity + " " + right_speedometer.velocity+ " "; // space helps drawing issues
     //String v_string = (String)left_speedometer.get_odo_meters() + " " + right_speedometer.get_odo_meters()+ " "; // space helps drawing issues
-    String v_string = (String)line_center + " ";
+    //String v_string = (String)line_center + " ";
     int16_t x1,y1;
     uint16_t h, w;
     display.getTextBounds((char *)v_string.c_str(), 10, 10,
