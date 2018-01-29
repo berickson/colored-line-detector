@@ -1,5 +1,6 @@
 #include <jevois/Core/Module.H>
 #include <jevois/Image/RawImageOps.H>
+#include <jevois/Util/Coordinates.H>
 #include <sstream>
 #include <iomanip>
 #include <opencv2/imgproc/imgproc.hpp>
@@ -52,7 +53,7 @@ return medianVal/nVals; }
 
  static jevois::ParameterCategory const ParamCateg("Colored Line Detector options");
 
-JEVOIS_DEFINE_ENUM_CLASS(AlgoEnum, (Sensors) (Edges) );
+JEVOIS_DEFINE_ENUM_CLASS(AlgoEnum, (Sensors) (Edges) (Both) );
 
 JEVOIS_DECLARE_PARAMETER(sensor_algorithm, AlgoEnum, "Algorithm class to use",
                           AlgoEnum::Sensors, AlgoEnum_Values, ParamCateg);
@@ -107,6 +108,7 @@ class ColoredLineDetector : public jevois::Module,
       cv::Mat rgb = jevois::rawimage::convertToCvRGB(inimg);
       cv::Mat gray;
       cv::cvtColor(rgb, gray, cv::COLOR_RGB2GRAY);
+      auto image_width = gray.cols;
       int scale = 1;
       int delta = 0;
       int ddepth = CV_16S;
@@ -145,8 +147,8 @@ class ColoredLineDetector : public jevois::Module,
 
       // try to find lines and draw in RGB
 
+      float intercepts[2] = {-1};
       for(auto channel:{0,1}) {
-
         // using contours and fitEllipse
         cv::RotatedRect best_ellipse;
         best_ellipse.size.width = 0;
@@ -179,11 +181,20 @@ class ColoredLineDetector : public jevois::Module,
           double x_intercept = line.x(bottom);
           cv::line(merged, p1, p2, cv::Scalar(255,255,255));
           cv::line(merged, cv::Point(x_intercept,bottom), cv::Point(x_intercept,bottom/2), cv::Scalar(0,255,255),2);
+          intercepts[channel] = x_intercept;
         }
       }
 
+      if(intercepts[0] > 0 && intercepts[1] > 0) {
+        std::stringstream serial_message;
+        float center = (intercepts[0] + intercepts[1]) / 2.0;
+        jevois::coords::imgToStdX (center, image_width);
+        serial_message << "lc " <<  center;
+        sendSerial(serial_message.str());
+      }
+
       //jevois::rawimage::pasteGreyToYUYV(right,visual,0,0);
-      jevois::rawimage::pasteRGBtoYUYV(merged,visual,0,0);
+      //jevois::rawimage::pasteRGBtoYUYV(merged,visual,0,0);
     }
 
     char sense_color_at_rect(cv::Rect roi, cv::Mat & rgb, jevois::RawImage & visual) {
@@ -293,6 +304,11 @@ class ColoredLineDetector : public jevois::Module,
 
       if(sensor_algorithm::get() == AlgoEnum::Edges) {
         process_edges(inimg, visual);
+        return;
+      }
+      if(sensor_algorithm::get() == AlgoEnum::Both) {
+        process_edges(inimg, visual);
+        process_virtual_sensors(inimg, visual);
         return;
       }
       process_virtual_sensors(inimg, visual);

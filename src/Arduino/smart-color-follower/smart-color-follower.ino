@@ -21,6 +21,8 @@ const int pin_left_b = 14;
 const int pin_battery_voltage_divider = A9;
 
 bool g_stop = false;
+float line_center = 0;
+uint32_t line_center_us = 0;
 
 #define bluetooth Serial3
 
@@ -255,7 +257,7 @@ public:
     uint16_t w;
 
     void print() {
-      bluetooth.println((String)"r:"+r+ " g:" + g + "b:" + b + " k: " + k + " w:"+ w );
+      bluetooth.println((String)"r:"+r+ " g:" + g + " b:" + b + " k: " + k + " w:"+ w );
     }
 
     void reset() {
@@ -324,6 +326,16 @@ public:
   String bottom;
 
 
+  bool end_ahead() {
+    uint16_t color_count = 0;
+    uint16_t max_i = bottom.length();
+    for (uint16_t i = 0; i < max_i; ++i) {
+      if (bottom[i]!='.') {
+        ++color_count;
+      }
+    }
+    return color_count > 3 || color_count == 0;
+  }
 
   bool intersection_ahead() {
     unsigned int max_distance = 10;
@@ -545,27 +557,50 @@ public:
     idle,
     looking_for_intersection,
     driving_to_intersection,
-    waiting_for_turn
+    waiting_for_turn,
+    waiting_for_end
   } state;
+
+  Planner() {
+    state = idle;
+  }
   char next_color;
 
-  void go_intersection(String color) {
-    if(color.length() == 1) {
-      next_color = color[0];
+  String colors = "rbg";
+  uint16_t next_color_index = 0;
+
+  void go_intersection(String colors) {
+    if(colors.length()==0) {
+      return;
     }
+    this->colors = colors;
+    next_color = colors[0];
+    next_color_index = 1;
     driver.set_goal(5.0, speed_m_s_sp);
     state = looking_for_intersection;
   }
 
   void execute() {
-    if (g_stop) {
+    if (g_stop || state == idle) {
       state = idle;
+      if(button1.was_clicked()) {
+        go_intersection("rbg");
+      }
       return;
     }
     if (state==idle) {
       return;
     }
+    if (button1.was_clicked()) {
+      driver.stop();
+      state = idle;
+      g_stop = true;
+    }
+
     if (state == looking_for_intersection) {
+      // try to follow the line
+      float kp_line = 1./500;
+      driver.set_goal(0.125, speed_m_s_sp, 1 + kp_line * line_center, 1 - kp_line * line_center);
       if(goalpost.intersection_ahead()) {
         goalpost.reset_color_counts();
         driver.set_goal(0.125, speed_m_s_sp);
@@ -574,6 +609,7 @@ public:
     }
     if (state == driving_to_intersection) {
       if (!driver.destination_pending) {
+        bluetooth.println((String) "planner looking for " + next_color );
         goalpost.print_color_counts();
         // turn to direction of next color
         if (goalpost.left_counts.top_color().color == next_color) {
@@ -586,8 +622,22 @@ public:
     }
     if (state == waiting_for_turn) {
       if (!driver.destination_pending) {
-        state = idle;
-        bluetooth.println("planner done");
+        if(next_color_index < colors.length()) {
+          next_color = colors[next_color_index];
+          ++next_color_index;
+          driver.set_goal(5.0, speed_m_s_sp);
+          state = looking_for_intersection;
+        } else {
+          driver.set_goal(5.0, speed_m_s_sp);
+          state = waiting_for_end;
+        }
+      }
+    }
+    if (state == waiting_for_end) {
+      if(goalpost.end_ahead()) {
+          driver.stop();
+          state = idle;
+          bluetooth.println("planner done");
       }
     }
   }
@@ -723,6 +773,12 @@ void on_colors_sensed(SerialCommands * sender) {
   show_goalpost(bottom, left, right);
 }
 
+void on_line_sensed(SerialCommands * sender) {
+  line_center = atof(sender->Next());
+  line_center_us = micros();
+}
+
+
 //This is the default handler, and gets called when no other command matches. 
 void on_unrecognized(SerialCommands* sender, const char* cmd)
 {
@@ -781,6 +837,7 @@ void show_goalpost(const char * bottom, const char * left, const char * right) {
 }
 
 SerialCommand cmd_colors_sensed("cld",on_colors_sensed);
+SerialCommand cmd_line_sensed("lc",on_line_sensed);
 
 SerialCommand cmd_help("?", on_help);
 SerialCommand cmd_set("set", on_set);
@@ -824,6 +881,7 @@ void setup(void) {
   display.fillScreen(GRAY);
   camera_commands.SetDefaultHandler(on_unrecognized);
   camera_commands.AddCommand(&cmd_colors_sensed);
+  camera_commands.AddCommand(&cmd_line_sensed);
 
   bluetooth_commands.AddCommand(&cmd_help);
   bluetooth_commands.AddCommand(&cmd_set);
@@ -896,7 +954,8 @@ void loop() {
   if(loop_checker.every_n_ms(100)) {
     display.setCursor(10,10);
     //String v_string = (String)left_speedometer.velocity + " " + right_speedometer.velocity+ " "; // space helps drawing issues
-    String v_string = (String)left_speedometer.get_odo_meters() + " " + right_speedometer.get_odo_meters()+ " "; // space helps drawing issues
+    //String v_string = (String)left_speedometer.get_odo_meters() + " " + right_speedometer.get_odo_meters()+ " "; // space helps drawing issues
+    String v_string = (String)line_center + " ";
     int16_t x1,y1;
     uint16_t h, w;
     display.getTextBounds((char *)v_string.c_str(), 10, 10,
