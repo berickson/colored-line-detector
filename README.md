@@ -16,7 +16,17 @@ setpar sensor_algorithm Edges
 
 setpar sensor_algorithm Both
 
-serout All
-serout Usb
+setpar serout All
+setpar serout USB
 setmapping 0
 streamon
+
+wb
+--
+# auto
+setcam autoexp 0
+setcam autowb 1
+
+# manual
+setcam autoexp 1
+setcam autowb 0

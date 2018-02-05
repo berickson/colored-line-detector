@@ -9,14 +9,14 @@
 using namespace std;
 
 char color_name(float r, float g, float b){
-  if (r < 0.05 && g < 0.05) {
-  // if (r < 0.2 && g < 0.1 && b < 0.3) { 
+  //if (r < 0.05 && g < 0.05) {
+  if (r < 0.1 && g < 0.1 && b < 0.3) { 
     return 'k';
   }
   if (r > 2 * g){
     return 'r';
   }
-  if (b > 2 * r && b > 2 * g){
+  if (b > 2 * r && b > 1.5 * g){
     return 'b';
   }
   if (g > 2 * r){
@@ -91,7 +91,6 @@ public:
     return (-a*x-c)/b;
   }
 };
-
 class ColoredLineDetector : public jevois::Module,
   public jevois::Parameter<x_sensor_count, y_sensor_count, sensor_algorithm>
 {
@@ -105,9 +104,11 @@ class ColoredLineDetector : public jevois::Module,
     int frame_number = 0;
 
     void process_edges(const jevois::RawImage & inimg, jevois::RawImage & visual) {
-      cv::Mat rgb = jevois::rawimage::convertToCvRGB(inimg);
-      cv::Mat gray;
-      cv::cvtColor(rgb, gray, cv::COLOR_RGB2GRAY);
+      //cv::Mat rgb = jevois::rawimage::convertToCvRGB(inimg);
+      cv::Mat gray =  jevois::rawimage::convertToCvGray(inimg);
+      gray = gray(cv::Rect(0, gray.size().height - gray.size().height/4 , gray.size().width, gray.size().height/4));
+
+      //cv::cvtColor(rgb, gray, cv::COLOR_RGB2GRAY);
       auto image_width = gray.cols;
       int scale = 1;
       int delta = 0;
@@ -191,6 +192,8 @@ class ColoredLineDetector : public jevois::Module,
         jevois::coords::imgToStdX (center, image_width);
         serial_message << "lc " <<  center;
         sendSerial(serial_message.str());
+      } else {
+        sendSerial("no edges");
       }
 
       //jevois::rawimage::pasteGreyToYUYV(right,visual,0,0);
@@ -288,6 +291,11 @@ class ColoredLineDetector : public jevois::Module,
           serial_message << sense_color_at_rect(roi, rgb, visual);
         }
       }
+      {
+        stringstream ss;
+        ss << frame_number;
+        sendSerial(ss.str());
+      }
       if(visual.valid()) {
         // Print a text message:
         stringstream ss;
@@ -301,6 +309,7 @@ class ColoredLineDetector : public jevois::Module,
     // this non-virtual form of process will be called by both virtual process methods
     // so, visual might not be valid
     void process(const jevois::RawImage & inimg, jevois::RawImage & visual) {
+      ++frame_number;
 
       if(sensor_algorithm::get() == AlgoEnum::Edges) {
         process_edges(inimg, visual);
@@ -324,8 +333,6 @@ class ColoredLineDetector : public jevois::Module,
     //! Processing function
     virtual void process(jevois::InputFrame && inframe, jevois::OutputFrame && outframe) override
     {
-      ++frame_number;
-
       // Wait for next available camera image:
       jevois::RawImage const inimg = inframe.get(true);
 

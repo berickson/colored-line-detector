@@ -13,8 +13,8 @@ const int pin_left_rev = 6;
 const int pin_right_fwd = 21;
 const int pin_right_rev = 22;
 
-const int pin_right_a = 17;
-const int pin_right_b = 16;
+const int pin_right_a = 16;
+const int pin_right_b = 17;
 
 const int pin_left_a = 15;
 const int pin_left_b = 14;
@@ -25,6 +25,7 @@ float line_center = 0;
 uint32_t line_center_us = 0;
 
 #define bluetooth Serial3
+#define jevois Serial1
 
 float sign_of(float i) {
   if (i<0) return -1;
@@ -40,7 +41,9 @@ struct Settings {
   float velocity_k_p = 3.0;
   float velocity_k_d = 100;
   float position_k_p = 20;
-  float position_k_d = 200;
+  float position_k_d = 400;
+  float line_k_p = 0.03;
+  float throttle_follow = 15;
 };
 Settings settings;
 
@@ -158,9 +161,9 @@ public:
 
 
 QuadratureEncoder right_encoder(pin_right_a, pin_right_b);
-Speedometer right_speedometer(right_encoder, 1./4500);
+Speedometer right_speedometer(right_encoder, 1./7132);
 QuadratureEncoder left_encoder(pin_left_a, pin_left_b);
-Speedometer left_speedometer(left_encoder, 1./4500 / 1.585);
+Speedometer left_speedometer(left_encoder, 1./7132);
 
 // unfortunatly, we need external callbacks
 void on_right_a_changed () {
@@ -185,7 +188,7 @@ class Motor {
   public:
     const int pin_fwd;
     const int pin_rev;
-    const int power_stall = (int) 145.;
+    const int power_stall = (int) 155.;
     const int power_max = (int) 255;
     const int pwm_frequency = 50000;
     
@@ -258,11 +261,11 @@ public:
   };
 
   struct RgbCounts {
-    uint16_t r;
-    uint16_t g;
-    uint16_t b;
-    uint16_t k;
-    uint16_t w;
+    uint16_t r=0;
+    uint16_t g=0;
+    uint16_t b=0;
+    uint16_t k=0;
+    uint16_t w=0;
 
     void print() {
       bluetooth.println((String)"r:"+r+ " g:" + g + " b:" + b + " k: " + k + " w:"+ w );
@@ -366,6 +369,31 @@ public:
       return true;
     }
     return false;
+  }
+
+  char current_color() {
+    RgbCounts bottom_counts;
+    bottom_counts.add_reading(bottom);
+    return bottom_counts.top_color().color;
+  }
+
+  enum Direction {dir_forward, dir_left, dir_right};
+
+  
+  Direction get_color_direction(char color_name) {
+    if (current_color() == color_name) {
+      return Direction::dir_forward;
+    }
+    if (left_counts.top_color().color == color_name) {
+       return Direction::dir_left;
+    } else if (right_counts.top_color().color == color_name) {
+       return Direction::dir_right;
+    }
+    return Direction::dir_forward;
+
+    // see what current color is
+    
+
   }
 
   void reset_color_counts() {
@@ -510,6 +538,7 @@ WheelPID right_wheel(right_speedometer);
 class Driver {
 public:
   bool destination_pending = false;
+  bool disable = false;
 
   float right_destination_meters = NAN;
   float left_destination_meters = NAN;
@@ -541,7 +570,7 @@ public:
     this->right_start_meters = right_speedometer.get_odo_meters();
     this->right_destination_meters = ratio_right * d + this->right_start_meters;
     this->left_destination_meters = ratio_left * d + this->left_start_meters;
-    throttle = 0;
+    //throttle = 0;
     last_error = 0;
     last_position_error = 0;
     fwd_rev = sign_of(ratio_right); // 1 for forward, -1 for reverse
@@ -552,7 +581,7 @@ public:
   }
 
   void turn_degrees(float degrees, float velocity_max) {
-    float meters_per_degree = 0.13/90.;
+    float meters_per_degree = 0.14/90.;
     float d = degrees * meters_per_degree;
     int ccw_cw = sign_of(d);
     set_goal(fabs(d), velocity_max, -ccw_cw, ccw_cw);
@@ -560,10 +589,14 @@ public:
 
   void stop() {
     destination_pending = false;
+    throttle = 0;
   }
 
 
   void execute() {
+    if(disable) {
+      return;
+    }
     if(g_stop) {
       destination_pending = false;
     }
@@ -599,9 +632,11 @@ public:
     //motor_right.set_speed_percent(ratio_right * throttle - left_error * k_diff);
     //motor_left.set_speed_percent(ratio_left * throttle + left_error * k_diff);
     
+    motor_right.set_speed_percent(right_wheel.execute(us));
+    motor_left.set_speed_percent( left_wheel.execute(us));
     //k_diff = 0;
-    motor_right.set_speed_percent(right_wheel.execute(us)- left_error * k_diff);
-    motor_left.set_speed_percent( left_wheel.execute(us) + left_error * k_diff);
+    //motor_right.set_speed_percent(right_wheel.execute(us)- left_error * k_diff);
+    //motor_left.set_speed_percent( left_wheel.execute(us) + left_error * k_diff);
     //motor_right.set_speed_percent(20);
     //motor_left.set_speed_percent(20);
 
@@ -662,6 +697,7 @@ public:
   void execute() {
     if (g_stop || state == idle) {
       state = idle;
+      driver.disable=false;
       if(button1.was_clicked()) {
         go_intersection("rbg");
       }
@@ -678,11 +714,16 @@ public:
 
     if (state == looking_for_intersection) {
       // try to follow the line
-      float kp_line = 1./500;
-      driver.set_goal(0.125, speed_m_s_sp, 1 + kp_line * line_center, 1 - kp_line * line_center);
+      driver.disable = true;
+      motor_left.set_speed_percent(settings.throttle_follow + settings.line_k_p * line_center);
+      //  bluetooth.println(settings.throttle_follow + settings.line_k_p * line_center);
+      motor_right.set_speed_percent(settings.throttle_follow - settings.line_k_p * line_center);
+
+      //driver.set_goal(1.0, speed_m_s_sp, 1 + settings.line_k_p * line_center, 1 - settings.line_k_p * line_center);
       if(goalpost.intersection_ahead()) {
         goalpost.reset_color_counts();
-        driver.set_goal(0.125, speed_m_s_sp);
+        driver.disable = false;
+        driver.set_goal(0.155, speed_m_s_sp);
         state = driving_to_intersection;
       }
     }
@@ -691,9 +732,10 @@ public:
         bluetooth.println((String) "planner looking for " + next_color );
         goalpost.print_color_counts();
         // turn to direction of next color
-        if (goalpost.left_counts.top_color().color == next_color) {
+        Goalpost::Direction direction = goalpost.get_color_direction(next_color);
+        if (direction==Goalpost::Direction::dir_left) {
           driver.turn_degrees(90, speed_m_s_sp);
-        } else if (goalpost.right_counts.top_color().color == next_color) {
+        } else if (direction==Goalpost::Direction::dir_right) {
           driver.turn_degrees(-90, speed_m_s_sp);
         }
         state = waiting_for_turn;
@@ -727,7 +769,7 @@ Planner planner;
 
 // buffer must be big enough for command, arguments, terminators and null
 char camera_command_buffer_[100];
-SerialCommands camera_commands(&Serial1, camera_command_buffer_, sizeof(camera_command_buffer_), (char *)"\r\n", (char *)" ");
+SerialCommands camera_commands(&jevois, camera_command_buffer_, sizeof(camera_command_buffer_), (char *)"\r\n", (char *)" ");
 char bluetooth_command_buffer_[100];
 SerialCommands bluetooth_commands(&bluetooth, bluetooth_command_buffer_, sizeof(bluetooth_command_buffer_), (char *)"\r\n", (char *)" ");
 
@@ -773,7 +815,39 @@ void on_turn(SerialCommands * sender) {
 }
 
 void on_help(SerialCommands * sender) {
-  bluetooth.println("ok");
+  bluetooth.println("commands");
+  bluetooth.println("--------");
+  bluetooth.println("?");
+  bluetooth.println("set");
+  bluetooth.println("go");
+  bluetooth.println("go_intersection");
+  bluetooth.println("turn");
+  bluetooth.println("fwd");
+  bluetooth.println("rev");
+  bluetooth.println("left");
+  bluetooth.println("right");
+  bluetooth.println("stop");
+  bluetooth.println("speed");
+  bluetooth.println();
+  bluetooth.println("status");
+  bluetooth.println("------");
+  bluetooth.println((String)"voltage: "+v_bat.get_voltage());
+}
+
+// calibrates the white balance
+void on_wb(SerialCommands * sender) {
+  bluetooth.println("calibrating white balance");
+  bluetooth.println("wait...");
+  // set auto white balance
+  jevois.println("");
+  jevois.println("setcam autoexp 0");
+  delay(10);
+  jevois.println("setcam autowb 1");
+  delay(5000);
+  jevois.println("setcam autoexp 1");
+  delay(10);
+  jevois.println("setcam autowb 0");
+  bluetooth.println("done");
 }
 
 void on_set(SerialCommands * sender) {
@@ -792,6 +866,8 @@ void on_set(SerialCommands * sender) {
       } else {
         if(param == "") {
           // do nothing if there is no first parameter
+        } else if (param == "throttle_follow" || param == "tf") {
+          settings.throttle_follow = value;
         } else if (param == "velocity_k_p" || param == "vkp") {
           settings.velocity_k_p = value;
         } else if (param == "velocity_k_d" || param == "vkd") {
@@ -800,6 +876,8 @@ void on_set(SerialCommands * sender) {
           settings.position_k_p = value;
         } else if (param == "position_k_d" || param == "xkd") {
           settings.position_k_d = value;
+        } else if (param == "line_k_p" || param == "lkp") {
+          settings.line_k_p = value;
         } else {
           bluetooth.println("invalid parameter " + param);
           return;
@@ -808,10 +886,12 @@ void on_set(SerialCommands * sender) {
     }
   }
 
+  bluetooth.println((String)"throttle_follow (tf): " + settings.throttle_follow);
   bluetooth.println((String)"velocity_k_p (vkp): " + settings.velocity_k_p);
   bluetooth.println((String)"velocity_k_d (vkd): " + settings.velocity_k_d);
   bluetooth.println((String)"position_k_p (xkp): " + settings.position_k_p);
-  bluetooth.println((String)"position_k_d (xkd: " + settings.position_k_d);
+  bluetooth.println((String)"position_k_d (xkd): " + settings.position_k_d);
+  bluetooth.println((String)"line_k_p (lkp): " + settings.line_k_p);
 
   bluetooth.println("ok");
 }
@@ -919,6 +999,7 @@ SerialCommand cmd_colors_sensed("cld",on_colors_sensed);
 SerialCommand cmd_line_sensed("lc",on_line_sensed);
 
 SerialCommand cmd_help("?", on_help);
+SerialCommand cmd_wb("wb", on_wb);
 SerialCommand cmd_set("set", on_set);
 SerialCommand cmd_go("go", on_go);
 SerialCommand cmd_go_intersection("go_intersection", on_go_intersection);
@@ -931,7 +1012,7 @@ SerialCommand cmd_stop("stop", on_stop);
 SerialCommand cmd_speed("speed", on_speed);
 
 void setup(void) {
-  Serial1.begin(115200); // camera
+  jevois.begin(115200); // camera
   Serial.begin(115200);  // host
   //while(!Serial){}
   bluetooth.begin(9600);
@@ -964,6 +1045,7 @@ void setup(void) {
 
   bluetooth_commands.AddCommand(&cmd_help);
   bluetooth_commands.AddCommand(&cmd_set);
+  bluetooth_commands.AddCommand(&cmd_wb);
   bluetooth_commands.AddCommand(&cmd_go);
   bluetooth_commands.AddCommand(&cmd_go_intersection);
   bluetooth_commands.AddCommand(&cmd_turn);
@@ -1032,9 +1114,10 @@ void loop() {
 
   if(loop_checker.every_n_ms(100)) {
     display.setCursor(10,10);
-    String v_string = (String)left_speedometer.velocity + " " + right_speedometer.velocity+ " "; // space helps drawing issues
+    //String v_string = (String)left_speedometer.velocity + " " + right_speedometer.velocity+ " "; // space helps drawing issues
+    //String v_string = (String)left_speedometer.velocity + " " + right_speedometer.velocity+ " "; // space helps drawing issues
     //String v_string = (String)left_speedometer.get_odo_meters() + " " + right_speedometer.get_odo_meters()+ " "; // space helps drawing issues
-    //String v_string = (String)line_center + " ";
+    String v_string = (String)line_center + " ";
     int16_t x1,y1;
     uint16_t h, w;
     display.getTextBounds((char *)v_string.c_str(), 10, 10,
@@ -1042,6 +1125,5 @@ void loop() {
     display.fillRect(x1,y1,w,h,GRAY);
     display.print(v_string);
   }
-
 }
 
