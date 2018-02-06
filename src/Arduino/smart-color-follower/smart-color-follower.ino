@@ -22,6 +22,7 @@ const int pin_battery_voltage_divider = A9;
 
 bool g_stop = false;
 float line_center = 0;
+float line_center_derivative = 0;
 uint32_t line_center_us = 0;
 
 #define bluetooth Serial3
@@ -42,7 +43,8 @@ struct Settings {
   float velocity_k_d = 100;
   float position_k_p = 20;
   float position_k_d = 400;
-  float line_k_p = 0.03;
+  float line_k_p = 40;
+  float line_k_d = 500;
   float throttle_follow = 15;
 };
 Settings settings;
@@ -349,7 +351,7 @@ public:
   }
 
   bool intersection_ahead() {
-    unsigned int max_distance = 10;
+    unsigned int max_distance = 6;
     bool left_ahead = false;
     bool right_ahead = false;
     unsigned int end_i = std::min(std::min(max_distance, left.length()),right.length());
@@ -620,6 +622,7 @@ public:
     throttle = constrain(throttle, -100, 100);
 
     // set a correction in the left motor based on how far off it is compared to the right motor
+    /*
     float left_error = 0;
     {
       float right_travelled = right_speedometer.get_odo_meters() - right_start_meters;
@@ -627,6 +630,7 @@ public:
       float left_expected = right_travelled * ratio_right / ratio_left;
       left_error = left_expected - left_travelled;
     }
+    */
 
     // motor_right.set_speed_percent(ratio_right * throttle - left_error * k_diff);
     //motor_right.set_speed_percent(ratio_right * throttle - left_error * k_diff);
@@ -715,9 +719,10 @@ public:
     if (state == looking_for_intersection) {
       // try to follow the line
       driver.disable = true;
-      motor_left.set_speed_percent(settings.throttle_follow + settings.line_k_p * line_center);
+      float throttle_turn =  settings.line_k_p / 1000 * line_center + settings.line_k_d * line_center_derivative;
+      motor_left.set_speed_percent(settings.throttle_follow + throttle_turn);
       //  bluetooth.println(settings.throttle_follow + settings.line_k_p * line_center);
-      motor_right.set_speed_percent(settings.throttle_follow - settings.line_k_p * line_center);
+      motor_right.set_speed_percent(settings.throttle_follow - throttle_turn);
 
       //driver.set_goal(1.0, speed_m_s_sp, 1 + settings.line_k_p * line_center, 1 - settings.line_k_p * line_center);
       if(goalpost.intersection_ahead()) {
@@ -840,10 +845,17 @@ void on_wb(SerialCommands * sender) {
   bluetooth.println("wait...");
   // set auto white balance
   jevois.println("");
+  jevois.println("setcam presetwb 1");
+
   jevois.println("setcam autoexp 0");
   delay(10);
   jevois.println("setcam autowb 1");
+  delay(10);
+  jevois.println("setcam autogain 1");
+
   delay(5000);
+  jevois.println("setcam autogain 0");
+  delay(10);
   jevois.println("setcam autoexp 1");
   delay(10);
   jevois.println("setcam autowb 0");
@@ -851,6 +863,7 @@ void on_wb(SerialCommands * sender) {
 }
 
 void on_set(SerialCommands * sender) {
+  auto reply = sender->GetSerial();
   String param = sender->Next();
 
   String param2 = sender->Next();
@@ -878,6 +891,8 @@ void on_set(SerialCommands * sender) {
           settings.position_k_d = value;
         } else if (param == "line_k_p" || param == "lkp") {
           settings.line_k_p = value;
+        } else if (param == "line_k_d" || param == "lkd") {
+          settings.line_k_d = value;
         } else {
           bluetooth.println("invalid parameter " + param);
           return;
@@ -886,14 +901,16 @@ void on_set(SerialCommands * sender) {
     }
   }
 
-  bluetooth.println((String)"throttle_follow (tf): " + settings.throttle_follow);
-  bluetooth.println((String)"velocity_k_p (vkp): " + settings.velocity_k_p);
-  bluetooth.println((String)"velocity_k_d (vkd): " + settings.velocity_k_d);
-  bluetooth.println((String)"position_k_p (xkp): " + settings.position_k_p);
-  bluetooth.println((String)"position_k_d (xkd): " + settings.position_k_d);
-  bluetooth.println((String)"line_k_p (lkp): " + settings.line_k_p);
-
-  bluetooth.println("ok");
+  reply->println((String)"throttle_follow (tf): " + settings.throttle_follow);
+  reply->println((String)"velocity_k_p (vkp): " + settings.velocity_k_p);
+  reply->println((String)"velocity_k_d (vkd): " + settings.velocity_k_d);
+  reply->println((String)"position_k_p (xkp): " + settings.position_k_p);
+  reply->println((String)"position_k_d (xkd): " + settings.position_k_d);
+  reply->flush();
+  delay(100);
+  reply->println((String)"line_k_d (lkd): " + settings.line_k_d);
+  reply->println((String)"line_k_p (lkp): " + settings.line_k_p);
+  reply->println("ok");
 }
 
 
@@ -933,8 +950,12 @@ void on_colors_sensed(SerialCommands * sender) {
 }
 
 void on_line_sensed(SerialCommands * sender) {
-  line_center = atof(sender->Next());
-  line_center_us = micros();
+  float new_line_center = atof(sender->Next());
+  float new_line_center_us = micros();
+  float dt = (new_line_center_us - line_center_us);
+  line_center_derivative  = (new_line_center - line_center) / dt;
+  line_center = new_line_center;
+  line_center_us = new_line_center_us;
 }
 
 

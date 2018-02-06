@@ -24,9 +24,21 @@ streamon
 wb
 --
 # auto
+setcam presetwb 1
 setcam autoexp 0
 setcam autowb 1
+setcam autogain 1
 
 # manual
+setcam autogain 0
 setcam autoexp 1
 setcam autowb 0
+
+lab values
+-----------
+blue  11 54 36
+black  4 51 46
+red   31 66 50
+green  13 49 42
+
+

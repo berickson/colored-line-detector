@@ -14,7 +14,8 @@
         "slist": "cpp",
         "random": "cpp",
         "cmath": "cpp",
-        "complex": "cpp"
+        "complex": "cpp",
+        "iosfwd": "cpp"
     },
     "arduino.path":"/home/brian/arduino-1.8.3/"
 }

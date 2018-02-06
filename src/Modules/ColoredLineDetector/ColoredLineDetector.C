@@ -8,7 +8,69 @@
 
 using namespace std;
 
+void rgb_to_lab(float r, float g, float b, float * l, float * a, float * lb) {
+  cv::Mat3f rgb(cv::Vec3f(r, g, b));
+  cv::Mat3f lab;
+  cv::cvtColor(rgb, lab, cv::COLOR_RGB2Lab);
+  *l = lab.at<float>(0) / 100;
+  *a = (lab.at<float>(1) + 128) / 255;
+  *lb = (lab.at<float>(2) + 128) / 255;
+}
+
+float color_distance(cv::Vec3f lab1, cv::Vec3f lab2) {
+  float d_a = lab1[1] - lab2[1];
+  float d_b = lab1[2] - lab2[2];
+  return sqrt(d_a*d_a+d_b*d_b);
+  
+}
+
 char color_name(float r, float g, float b){
+/*
+lab values (18% gray)
+-----------
+blue  11 54 36
+black  4 51 46
+red   31 66 50
+green  13 49 42
+*/
+  float lab_l, lab_a, lab_b;
+  rgb_to_lab(r, g, b, &lab_l, &lab_a, &lab_b);
+  if(lab_l <= 0.11) {
+    return 'k';
+  }
+  if(lab_l >= 0.4) {
+    return '.';
+  }
+  
+  cv::Vec3f lab = cv::Vec3f(lab_l, lab_a, lab_b);
+  cv::Vec3f lab_red = cv::Vec3f(.31, .66, .50);
+  cv::Vec3f lab_green = cv::Vec3f(.14, .49, .42);
+  cv::Vec3f lab_blue = cv::Vec3f(.16, .53, .38);
+
+  float d_red = color_distance(lab, lab_red);
+  float d_green = color_distance(lab, lab_green);
+  float d_blue = color_distance(lab, lab_blue);
+
+  if(d_red < d_green && d_red < d_blue) {
+    return 'r';
+  }
+  if(d_green < d_blue) {
+    return 'g';
+  }
+  if(d_green < d_blue) {
+    return 'b';
+  }
+
+
+/*
+lab values
+-----------
+blue 11 52 40
+black 1 51 46
+red 31 66 44
+green 9 48 55
+*/
+
   //if (r < 0.05 && g < 0.05) {
   if (r < 0.1 && g < 0.1 && b < 0.3) { 
     return 'k';
@@ -103,7 +165,7 @@ class ColoredLineDetector : public jevois::Module,
 
     int frame_number = 0;
 
-    void process_edges(const jevois::RawImage & inimg, jevois::RawImage & visual) {
+    void process_edges(const jevois::RawImage & inimg, jevois::RawImage & /*visual*/) {
       //cv::Mat rgb = jevois::rawimage::convertToCvRGB(inimg);
       cv::Mat gray =  jevois::rawimage::convertToCvGray(inimg);
       gray = gray(cv::Rect(0, gray.size().height - gray.size().height/4 , gray.size().width, gray.size().height/4));
@@ -187,10 +249,15 @@ class ColoredLineDetector : public jevois::Module,
       }
 
       if(intercepts[0] > 0 && intercepts[1] > 0) {
+        jevois::coords::imgToStdX (intercepts[0], image_width);
+        jevois::coords::imgToStdX (intercepts[1], image_width);
+      }
+      int line_width = intercepts[0] - intercepts[1];
+      if(line_width > 500 && line_width < 1500) {
         std::stringstream serial_message;
         float center = (intercepts[0] + intercepts[1]) / 2.0;
-        jevois::coords::imgToStdX (center, image_width);
-        serial_message << "lc " <<  center;
+        serial_message << "lc " <<  center << endl;
+        serial_message << "lines " <<  intercepts[0] << " " << intercepts[1];
         sendSerial(serial_message.str());
       } else {
         sendSerial("no edges");
@@ -210,12 +277,23 @@ class ColoredLineDetector : public jevois::Module,
         auto median_g = median(planes[1],256);
         auto median_b = median(planes[2],256);
 
+        float l=NAN;
+        float a=NAN;
+        float b=NAN;
+        rgb_to_lab(median_r, median_g, median_b, &l, &a, &b);
+
+
         char c =  color_name(median_r, median_g, median_b);
         if(visual.valid()) {
           stringstream ss;
+          /*
           ss << c << std::setw(2) << std::setfill('0') << int(100*median_r) 
           << std::setw(2) << std::setfill('0') << int(100*median_g) 
           << std::setw(2) << std::setfill('0')<< int(100*median_b);
+          */
+          ss << c << std::setw(2) << std::setfill('0') << int(100*l) 
+          << std::setw(2) << std::setfill('0') << int(100*a) 
+          << std::setw(2) << std::setfill('0')<< int(100*b);
           int jevois_c = jevois::yuyv::White;
           if (c=='r') {
             jevois_c = jevois::yuyv::DarkPink;
@@ -232,6 +310,30 @@ class ColoredLineDetector : public jevois::Module,
         }
       return c;
     }
+
+    void process_line_center(const jevois::RawImage & inimg, jevois::RawImage & /*visual*/) {
+      cv::Mat rgb = jevois::rawimage::convertToCvRGB(inimg);
+      std::vector<int> non_white;
+      cv::Mat row = rgb.row(rgb.rows * 4 /5);
+      for(int i=0; i < rgb.cols; i++) {
+        cv::Vec3b intensity = row.at<cv::Vec3b>(0, i);
+        float r = intensity.val[0]/255.;
+        float g = intensity.val[1]/255.;
+        float b = intensity.val[2]/255.;
+        if(color_name(r,g,b)!='.') {
+          non_white.push_back(i);
+        }
+      }
+      if(non_white.size()>20) {
+        int center = non_white[non_white.size()/2];
+        float std_center = center;
+        jevois::coords::imgToStdX (std_center, rgb.cols);
+        std::stringstream ss;
+        ss << "lc " << std_center << " " << non_white.size();
+        sendSerial(ss.str().c_str());
+      }
+    }
+
 
     void process_virtual_sensors(const jevois::RawImage & inimg, jevois::RawImage & visual) {
       // Just copy the pixel data over:
@@ -310,6 +412,9 @@ class ColoredLineDetector : public jevois::Module,
     // so, visual might not be valid
     void process(const jevois::RawImage & inimg, jevois::RawImage & visual) {
       ++frame_number;
+      process_line_center(inimg, visual);
+      process_virtual_sensors(inimg, visual);
+      return;
 
       if(sensor_algorithm::get() == AlgoEnum::Edges) {
         process_edges(inimg, visual);
