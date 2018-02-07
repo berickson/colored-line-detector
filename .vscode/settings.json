@@ -15,7 +15,9 @@
         "random": "cpp",
         "cmath": "cpp",
         "complex": "cpp",
-        "iosfwd": "cpp"
+        "iosfwd": "cpp",
+        "future": "cpp",
+        "memory": "cpp"
     },
     "arduino.path":"/home/brian/arduino-1.8.3/"
 }

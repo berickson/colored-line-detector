@@ -43,7 +43,7 @@ struct Settings {
   float velocity_k_d = 100;
   float position_k_p = 20;
   float position_k_d = 400;
-  float line_k_p = 40;
+  float line_k_p = 20;
   float line_k_d = 500;
   float throttle_follow = 15;
 };
@@ -274,7 +274,11 @@ public:
     }
 
     void reset() {
-      *this = {0};
+      r=0;
+      g=0;
+      b=0;
+      k=0;
+      w=0;
     }
 
     void add_reading(String colors) {
@@ -326,9 +330,9 @@ public:
   };
 
   void print_color_counts() {
-    bluetooth.println("left:");
+    bluetooth.print("left:");
     left_counts.print();
-    bluetooth.println("right:");
+    bluetooth.print("right:");
     right_counts.print();
   }
 
@@ -676,7 +680,8 @@ public:
     looking_for_intersection,
     driving_to_intersection,
     waiting_for_turn,
-    waiting_for_end
+    waiting_for_end,
+    following_line
   } state;
 
   Planner() {
@@ -698,6 +703,11 @@ public:
     state = looking_for_intersection;
   }
 
+  void follow_line() {
+    driver.set_goal(5.0, speed_m_s_sp);
+    state = following_line;
+  }
+
   void execute() {
     if (g_stop || state == idle) {
       state = idle;
@@ -716,7 +726,7 @@ public:
       g_stop = true;
     }
 
-    if (state == looking_for_intersection) {
+    if (state == looking_for_intersection || state == following_line) {
       // try to follow the line
       driver.disable = true;
       float throttle_turn =  settings.line_k_p / 1000 * line_center + settings.line_k_d * line_center_derivative;
@@ -725,7 +735,7 @@ public:
       motor_right.set_speed_percent(settings.throttle_follow - throttle_turn);
 
       //driver.set_goal(1.0, speed_m_s_sp, 1 + settings.line_k_p * line_center, 1 - settings.line_k_p * line_center);
-      if(goalpost.intersection_ahead()) {
+      if(goalpost.intersection_ahead() && state == looking_for_intersection) {
         goalpost.reset_color_counts();
         driver.disable = false;
         driver.set_goal(0.155, speed_m_s_sp);
@@ -826,6 +836,7 @@ void on_help(SerialCommands * sender) {
   bluetooth.println("set");
   bluetooth.println("go");
   bluetooth.println("go_intersection");
+  bluetooth.println("follow");
   bluetooth.println("turn");
   bluetooth.println("fwd");
   bluetooth.println("rev");
@@ -927,6 +938,12 @@ void on_go_intersection(SerialCommands * sender) {
   return;
 }
 
+void on_follow(SerialCommands * sender) {
+  planner.follow_line();
+  return;
+}
+
+
 
 void on_colors_sensed(SerialCommands * sender) {
   char * bottom = sender->Next();
@@ -1023,6 +1040,7 @@ SerialCommand cmd_help("?", on_help);
 SerialCommand cmd_wb("wb", on_wb);
 SerialCommand cmd_set("set", on_set);
 SerialCommand cmd_go("go", on_go);
+SerialCommand cmd_follow("follow", on_follow);
 SerialCommand cmd_go_intersection("go_intersection", on_go_intersection);
 SerialCommand cmd_turn("turn", on_turn);
 SerialCommand cmd_fwd("fwd", on_fwd);
@@ -1068,6 +1086,7 @@ void setup(void) {
   bluetooth_commands.AddCommand(&cmd_set);
   bluetooth_commands.AddCommand(&cmd_wb);
   bluetooth_commands.AddCommand(&cmd_go);
+  bluetooth_commands.AddCommand(&cmd_follow);
   bluetooth_commands.AddCommand(&cmd_go_intersection);
   bluetooth_commands.AddCommand(&cmd_turn);
   bluetooth_commands.AddCommand(&cmd_fwd);

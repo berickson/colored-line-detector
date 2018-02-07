@@ -314,7 +314,7 @@ class ColoredLineDetector : public jevois::Module,
     void process_line_center(const jevois::RawImage & inimg, jevois::RawImage & /*visual*/) {
       cv::Mat rgb = jevois::rawimage::convertToCvRGB(inimg);
       std::vector<int> non_white;
-      cv::Mat row = rgb.row(rgb.rows * 4 /5);
+      cv::Mat row = rgb.row(rgb.rows * 0.5);
       for(int i=0; i < rgb.cols; i++) {
         cv::Vec3b intensity = row.at<cv::Vec3b>(0, i);
         float r = intensity.val[0]/255.;
