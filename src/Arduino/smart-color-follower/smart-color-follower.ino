@@ -7,6 +7,8 @@
 #define pin_oled_dc   12
 #define pin_button_1_a 30
 #define pin_button_1_b 32
+
+
 const int pin_left_fwd = 5;
 const int pin_left_rev = 6;
 
@@ -24,6 +26,33 @@ bool g_stop = false;
 float line_center = 0;
 float line_center_derivative = 0;
 uint32_t line_center_us = 0;
+
+class String80{
+public:
+
+  char buffer[81];
+  String80 () {
+    buffer[0]=0;
+  }
+
+  String80(const char * rhs) {
+    strncpy(buffer, rhs, sizeof(buffer));
+  }
+
+  String80 & operator = (const char * rhs) {
+    strncpy(buffer, rhs, sizeof(buffer));
+    return *this;
+  }
+  char operator [] (size_t pos ) {
+    return buffer[pos];
+  }
+  size_t length() const {
+    return strlen(buffer);
+  }
+  char * c_str() {
+    return buffer;
+  }
+};
 
 #define bluetooth Serial3
 #define jevois Serial1
@@ -257,6 +286,7 @@ float speed_m_s_sp = 0.25;
 
 class Goalpost {
 public:
+  size_t max_intersection_distance = 9;
   struct TopColor {
     char color = '.';
     uint16_t count = 0;
@@ -281,8 +311,9 @@ public:
       w=0;
     }
 
-    void add_reading(String colors) {
-      uint16_t max_i = colors.length();
+    void add_reading(const char * colors, size_t max_count = 99) {
+      // only record readings up to max intersection distance
+      uint16_t max_i = std::min(max_count, strlen(colors));
       for (int i = 0; i < max_i; ++i) {
         char c = colors[i];
         switch(c) {
@@ -338,9 +369,9 @@ public:
 
   RgbCounts left_counts, right_counts;
 
-  String left;
-  String right;
-  String bottom;
+  String80 left;
+  String80 right;
+  String80 bottom;
 
 
   bool end_ahead() {
@@ -355,10 +386,9 @@ public:
   }
 
   bool intersection_ahead() {
-    unsigned int max_distance = 6;
     bool left_ahead = false;
     bool right_ahead = false;
-    unsigned int end_i = std::min(std::min(max_distance, left.length()),right.length());
+    unsigned int end_i = std::min(std::min(max_intersection_distance, left.length()),right.length());
     for (unsigned int i=0; i < end_i && left[i] != 0; i++) {
       if (left[i] != '.') {
         left_ahead = true;
@@ -379,7 +409,7 @@ public:
 
   char current_color() {
     RgbCounts bottom_counts;
-    bottom_counts.add_reading(bottom);
+    bottom_counts.add_reading(bottom.c_str());
     return bottom_counts.top_color().color;
   }
 
@@ -405,15 +435,17 @@ public:
   void reset_color_counts() {
     left_counts.reset();
     right_counts.reset();
+    left_counts.add_reading(this->left.c_str(), max_intersection_distance);
+    right_counts.add_reading(this->right.c_str(), max_intersection_distance);
   }
 
-  void set_colors(const char * left, const char * right, const char * bottom) {
+  void set_colors(const char * bottom, const char * left, const char * right) {
     this->left = left;
     this->right = right;
     this->bottom = bottom;
 
-    left_counts.add_reading(this->left);
-    right_counts.add_reading(this->right);
+    left_counts.add_reading(this->left.c_str(), max_intersection_distance);
+    right_counts.add_reading(this->right.c_str(), max_intersection_distance);
   }
 
 } goalpost;
@@ -664,7 +696,6 @@ public:
 */
     if (left_wheel.done() && right_wheel.done()) {
       destination_pending = false;
-      bluetooth.println("goal");
     } else {
       destination_pending = true;
     }
@@ -689,11 +720,11 @@ public:
   }
   char next_color;
 
-  String colors = "rbg";
+  String80 colors = "rbg";
   uint16_t next_color_index = 0;
 
-  void go_intersection(String colors) {
-    if(colors.length()==0) {
+  void go_intersection(const char * colors) {
+    if(strlen(colors)==0) {
       return;
     }
     this->colors = colors;
@@ -736,22 +767,26 @@ public:
 
       //driver.set_goal(1.0, speed_m_s_sp, 1 + settings.line_k_p * line_center, 1 - settings.line_k_p * line_center);
       if(goalpost.intersection_ahead() && state == looking_for_intersection) {
+        bluetooth.println("intersection found");
         goalpost.reset_color_counts();
         driver.disable = false;
-        driver.set_goal(0.155, speed_m_s_sp);
+        driver.set_goal(0.1, speed_m_s_sp);
         state = driving_to_intersection;
       }
     }
     if (state == driving_to_intersection) {
       if (!driver.destination_pending) {
-        bluetooth.println((String) "planner looking for " + next_color );
         goalpost.print_color_counts();
         // turn to direction of next color
         Goalpost::Direction direction = goalpost.get_color_direction(next_color);
         if (direction==Goalpost::Direction::dir_left) {
           driver.turn_degrees(90, speed_m_s_sp);
+          bluetooth.println((String)"turning left to " + next_color);
         } else if (direction==Goalpost::Direction::dir_right) {
           driver.turn_degrees(-90, speed_m_s_sp);
+          bluetooth.println((String)"turning right to " + next_color);
+        } else {
+          bluetooth.println((String)"going straight to " + next_color);
         }
         state = waiting_for_turn;
       }
@@ -933,7 +968,7 @@ void on_go(SerialCommands * sender) {
 }
 
 void on_go_intersection(SerialCommands * sender) {
-  String color = sender->Next();
+  char * color = sender->Next();
   planner.go_intersection(color);
   return;
 }
@@ -946,24 +981,24 @@ void on_follow(SerialCommands * sender) {
 
 
 void on_colors_sensed(SerialCommands * sender) {
-  char * bottom = sender->Next();
-  if(bottom == NULL) {
+  String80 bottom = sender->Next();
+  if(bottom.length() == 0) {
     // invalid colors
     return;
   }
-  char * left = sender->Next();
-  if(left== NULL) {
+  String80 left = sender->Next();
+  if(left.length() == 0) {
     // invalid colors
     return;
   }
-  char * right = sender->Next();
-  if(right== NULL) {
+  String80 right = sender->Next();
+  if(right.length()==0) {
     // invalid colors
     return;
   }
-  goalpost.set_colors(left, right, bottom);
+  goalpost.set_colors(bottom.c_str(), left.c_str(), right.c_str());
   
-  show_goalpost(bottom, left, right);
+  show_goalpost(bottom.c_str(), left.c_str(), right.c_str());
 }
 
 void on_line_sensed(SerialCommands * sender) {
@@ -997,7 +1032,7 @@ uint16_t sensor_color(char c) {
   }
 }
 
-void show_goalpost(const char * bottom, const char * left, const char * right) {
+void show_goalpost(const char * bottom, const char *left, const char * right) {
   char n_bottom = strlen(bottom);
   char n_left= strlen(left);
   char n_right = strlen(right);

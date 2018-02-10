@@ -33,19 +33,28 @@ black  4 51 46
 red   31 66 50
 green  13 49 42
 */
+/*
   float lab_l, lab_a, lab_b;
   rgb_to_lab(r, g, b, &lab_l, &lab_a, &lab_b);
-  if(lab_l <= 0.11) {
+  
+  // Calibrated with close up horizontal gray card
+  //       away window - toward window
+  // white: 92 48 55 - 96 48 53
+  // black: 00 50 49 - 11 49 49
+  // green: 23 42 51 - 30 41 52
+  //  blue: 20 50 41 - 29 48 43
+  //   red: 53 68 62 - 47 71 64
+  if(lab_l <= 0.18 && fabs(lab_a-0.5)<0.05 && fabs(lab_b-0.49)<0.05) {
     return 'k';
   }
-  if(lab_l >= 0.4) {
+  if(lab_l >= 0.8 && fabs(lab_a-0.55)<0.05 && fabs(lab_b-0.53)<0.05) {
     return '.';
   }
-  
+
   cv::Vec3f lab = cv::Vec3f(lab_l, lab_a, lab_b);
-  cv::Vec3f lab_red = cv::Vec3f(.31, .66, .50);
-  cv::Vec3f lab_green = cv::Vec3f(.14, .49, .42);
-  cv::Vec3f lab_blue = cv::Vec3f(.16, .53, .38);
+  cv::Vec3f lab_red = cv::Vec3f(.50, .70, .64);
+  cv::Vec3f lab_green = cv::Vec3f(.27, .41, .52);
+  cv::Vec3f lab_blue = cv::Vec3f(.26, .49, .42);
 
   float d_red = color_distance(lab, lab_red);
   float d_green = color_distance(lab, lab_green);
@@ -61,27 +70,18 @@ green  13 49 42
     return 'b';
   }
 
-
-/*
-lab values
------------
-blue 11 52 40
-black 1 51 46
-red 31 66 44
-green 9 48 55
 */
-
   //if (r < 0.05 && g < 0.05) {
-  if (r < 0.1 && g < 0.1 && b < 0.3) { 
+  if (r < 0.2 && g < 0.2 && b < 0.4) { 
     return 'k';
   }
-  if (r > 2 * g){
+  if (r > 1.5 * g){
     return 'r';
   }
-  if (b > 2 * r && b > 1.5 * g){
+  if (b > 1.5 * r && b > 1.3 * g){
     return 'b';
   }
-  if (g > 2 * r){
+  if (g > 1.5 * r){
     return 'g';
   }
 
@@ -276,24 +276,24 @@ class ColoredLineDetector : public jevois::Module,
         auto median_r = median(planes[0],256);
         auto median_g = median(planes[1],256);
         auto median_b = median(planes[2],256);
-
+/*
         float l=NAN;
         float a=NAN;
         float b=NAN;
         rgb_to_lab(median_r, median_g, median_b, &l, &a, &b);
 
-
+*/
         char c =  color_name(median_r, median_g, median_b);
         if(visual.valid()) {
           stringstream ss;
-          /*
           ss << c << std::setw(2) << std::setfill('0') << int(100*median_r) 
           << std::setw(2) << std::setfill('0') << int(100*median_g) 
           << std::setw(2) << std::setfill('0')<< int(100*median_b);
-          */
+          /*
           ss << c << std::setw(2) << std::setfill('0') << int(100*l) 
           << std::setw(2) << std::setfill('0') << int(100*a) 
           << std::setw(2) << std::setfill('0')<< int(100*b);
+          */
           int jevois_c = jevois::yuyv::White;
           if (c=='r') {
             jevois_c = jevois::yuyv::DarkPink;
@@ -305,8 +305,8 @@ class ColoredLineDetector : public jevois::Module,
             jevois_c = jevois::yuyv::Black;
           }
           const int thickness = 3;
-          jevois::rawimage::writeText(visual, ss.str().c_str(), roi.x, roi.y-18, jevois::yuyv::White, jevois::rawimage::Font6x10);
           jevois::rawimage::drawRect(visual, roi.x-thickness, roi.y-thickness, roi.width+thickness*2, roi.height+thickness*2, thickness, jevois_c);
+          jevois::rawimage::writeText(visual, ss.str().c_str(), roi.x, roi.y-18, jevois::yuyv::White, jevois::rawimage::Font6x10);
         }
       return c;
     }
