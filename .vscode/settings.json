@@ -17,7 +17,8 @@
         "complex": "cpp",
         "iosfwd": "cpp",
         "future": "cpp",
-        "memory": "cpp"
+        "memory": "cpp",
+        "tuple": "cpp"
     },
     "arduino.path":"/home/brian/arduino-1.8.3/"
 }

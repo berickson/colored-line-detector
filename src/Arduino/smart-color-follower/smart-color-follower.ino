@@ -338,8 +338,34 @@ public:
       }
     }
 
+    uint16_t count_of(char color) {
+      switch(color) {
+        case 'r':
+          return r;
+          break;
+        case 'g':
+          return g;
+          break;
+        case 'b':
+          return b;
+          break;
+        case 'k':
+          return k;
+          break;
+        case '.':
+          return w;
+          break;
+        default:
+          return 0;
+      }
+    }
+
     TopColor top_color() {
       TopColor top;
+      if(k > top.count) {
+        top.color = 'k';
+        top.count = k;
+      }
       if(r > top.count) {
         top.color = 'r';
         top.count = r;
@@ -352,10 +378,6 @@ public:
         top.color = 'b';
         top.count = b;
       }
-      if(k > top.count) {
-        top.color = 'k';
-        top.count = k;
-      }
       return top;
     }
   };
@@ -365,6 +387,11 @@ public:
     left_counts.print();
     bluetooth.print("right:");
     right_counts.print();
+    RgbCounts bottom_counts;
+    bottom_counts.add_reading(bottom.c_str());
+    bluetooth.print("bottom:");
+    bottom_counts.print();
+
   }
 
   RgbCounts left_counts, right_counts;
@@ -385,26 +412,26 @@ public:
     return color_count > 3 || color_count == 0;
   }
 
-  bool intersection_ahead() {
-    bool left_ahead = false;
-    bool right_ahead = false;
+  float intersection_ahead() {
+    int left_ahead = 0;
+    int right_ahead = 0;
     unsigned int end_i = std::min(std::min(max_intersection_distance, left.length()),right.length());
     for (unsigned int i=0; i < end_i && left[i] != 0; i++) {
       if (left[i] != '.') {
-        left_ahead = true;
+        left_ahead = i;
         break;
       }
     }
     for (unsigned int i=0; i < end_i && right[i] != 0; i++) {
       if (right[i] != '.') {
-        right_ahead = true;
+        right_ahead = i;
         break;
       }
     }
     if(left_ahead && right_ahead) {
-      return true;
+      return .07 + (left_ahead+right_ahead) / 200.;
     }
-    return false;
+    return 0;
   }
 
   char current_color() {
@@ -420,15 +447,11 @@ public:
     if (current_color() == color_name) {
       return Direction::dir_forward;
     }
-    if (left_counts.top_color().color == color_name) {
-       return Direction::dir_left;
-    } else if (right_counts.top_color().color == color_name) {
-       return Direction::dir_right;
+    if(left_counts.count_of(color_name) > right_counts.count_of(color_name)) {
+      return Direction::dir_left;
+    } else {
+      return Direction::dir_right;
     }
-    return Direction::dir_forward;
-
-    // see what current color is
-    
 
   }
 
@@ -711,6 +734,7 @@ public:
     looking_for_intersection,
     driving_to_intersection,
     waiting_for_turn,
+    turn_then_verify,
     waiting_for_end,
     following_line
   } state;
@@ -757,7 +781,7 @@ public:
       g_stop = true;
     }
 
-    if (state == looking_for_intersection || state == following_line) {
+    if (state == looking_for_intersection || state == following_line || state == waiting_for_end) {
       // try to follow the line
       driver.disable = true;
       float throttle_turn =  settings.line_k_p / 1000 * line_center + settings.line_k_d * line_center_derivative;
@@ -766,12 +790,15 @@ public:
       motor_right.set_speed_percent(settings.throttle_follow - throttle_turn);
 
       //driver.set_goal(1.0, speed_m_s_sp, 1 + settings.line_k_p * line_center, 1 - settings.line_k_p * line_center);
-      if(goalpost.intersection_ahead() && state == looking_for_intersection) {
-        bluetooth.println("intersection found");
-        goalpost.reset_color_counts();
-        driver.disable = false;
-        driver.set_goal(0.1, speed_m_s_sp);
-        state = driving_to_intersection;
+      if (state == looking_for_intersection) {
+        float d_ahead = goalpost.intersection_ahead();
+        if (d_ahead) {
+          bluetooth.println((String)"intersection found: " + d_ahead);
+          goalpost.reset_color_counts();
+          driver.disable = false;
+          driver.set_goal(d_ahead , speed_m_s_sp);
+          state = driving_to_intersection;
+        }
       }
     }
     if (state == driving_to_intersection) {
@@ -788,7 +815,18 @@ public:
         } else {
           bluetooth.println((String)"going straight to " + next_color);
         }
+        state = turn_then_verify;
+      }
+    }
+    if (state == turn_then_verify) {
+      if (!driver.destination_pending) {
+        if(goalpost.current_color() != next_color) {
+          bluetooth.print((String)"found "+goalpost.current_color()+" instead of "+ next_color + " making U turn");
+          driver.turn_degrees(30, speed_m_s_sp);
+        } else {
         state = waiting_for_turn;
+        }
+
       }
     }
     if (state == waiting_for_turn) {
