@@ -1,5 +1,7 @@
 #include <SerialCommands.h> // see https://github.com/ppedro74/Arduino-SerialCommands
 
+#define dads_car 0
+
 #define pin_oled_sclk 13
 #define pin_oled_mosi 11
 #define pin_oled_cs   10
@@ -9,11 +11,12 @@
 #define pin_button_1_b 32
 
 
+#define has_display 1
 const int pin_left_fwd = 5;
 const int pin_left_rev = 6;
 
-const int pin_right_fwd = 21;
-const int pin_right_rev = 22;
+const int pin_right_fwd = 22;
+const int pin_right_rev = 21;
 
 const int pin_right_a = 16;
 const int pin_right_b = 17;
@@ -54,8 +57,13 @@ public:
   }
 };
 
+#if(dads_car)
 #define bluetooth Serial3
 #define jevois Serial1
+#else
+#define bluetooth Serial3
+#define jevois Serial1
+#endif
 
 float sign_of(float i) {
   if (i<0) return -1;
@@ -75,6 +83,7 @@ struct Settings {
   float line_k_p = 20;
   float line_k_d = 500;
   float throttle_follow = 15;
+  float speed_m_s_sp = 0.05;
 };
 Settings settings;
 
@@ -219,7 +228,11 @@ class Motor {
   public:
     const int pin_fwd;
     const int pin_rev;
+#if(dads_car)
+    const int power_stall = (int) 0.;
+#else
     const int power_stall = (int) 155.;
+#endif
     const int power_max = (int) 255;
     const int pwm_frequency = 50000;
     
@@ -280,9 +293,6 @@ Motor motor_right(pin_right_fwd, pin_right_rev);
 
 const int display_width = 96;
 const int display_height = 64;
-
-float speed_m_s_sp = 0.25;
-
 
 class Goalpost {
 public:
@@ -555,7 +565,7 @@ struct WheelPID {
     throttle(0),
     last_position_error(NAN),
     start_meters(NAN),
-    velocity_max(speed_m_s_sp) {
+    velocity_max(settings.speed_m_s_sp) {
   }
 
   void set_goal(unsigned long us, float d, double velocity_max) {
@@ -753,14 +763,31 @@ public:
     }
     this->colors = colors;
     next_color = colors[0];
-    next_color_index = 1;
-    driver.set_goal(5.0, speed_m_s_sp);
+    next_color_index = 0;
+    driver.set_goal(5.0, settings.speed_m_s_sp);
     state = looking_for_intersection;
   }
 
   void follow_line() {
-    driver.set_goal(5.0, speed_m_s_sp);
+    driver.set_goal(5.0, settings.speed_m_s_sp);
     state = following_line;
+  }
+
+  uint16_t current_color_code() {
+    if(next_color_index == 0) {
+      return BLACK;
+    }
+    if(next_color_index <= colors.length()) {
+      char c = colors[next_color_index-1];
+      if(c == 'r') {
+        return RED;
+      } else if (c == 'g') {
+        return GREEN;
+      } else if (c == 'b') {
+        return BLUE;
+      } 
+    }
+    return GRAY;
   }
 
   void execute() {
@@ -796,7 +823,7 @@ public:
           bluetooth.println((String)"intersection found: " + d_ahead);
           goalpost.reset_color_counts();
           driver.disable = false;
-          driver.set_goal(d_ahead , speed_m_s_sp);
+          driver.set_goal(d_ahead , settings.speed_m_s_sp);
           state = driving_to_intersection;
         }
       }
@@ -807,10 +834,10 @@ public:
         // turn to direction of next color
         Goalpost::Direction direction = goalpost.get_color_direction(next_color);
         if (direction==Goalpost::Direction::dir_left) {
-          driver.turn_degrees(90, speed_m_s_sp);
+          driver.turn_degrees(90, settings.speed_m_s_sp);
           bluetooth.println((String)"turning left to " + next_color);
         } else if (direction==Goalpost::Direction::dir_right) {
-          driver.turn_degrees(-90, speed_m_s_sp);
+          driver.turn_degrees(-90, settings.speed_m_s_sp);
           bluetooth.println((String)"turning right to " + next_color);
         } else {
           bluetooth.println((String)"going straight to " + next_color);
@@ -821,8 +848,8 @@ public:
     if (state == turn_then_verify) {
       if (!driver.destination_pending) {
         if(goalpost.current_color() != next_color) {
-          bluetooth.print((String)"found "+goalpost.current_color()+" instead of "+ next_color + " making U turn");
-          driver.turn_degrees(30, speed_m_s_sp);
+          bluetooth.println((String)"found "+goalpost.current_color()+" instead of "+ next_color + " turning");
+          driver.turn_degrees(10, settings.speed_m_s_sp);
         } else {
         state = waiting_for_turn;
         }
@@ -831,13 +858,13 @@ public:
     }
     if (state == waiting_for_turn) {
       if (!driver.destination_pending) {
+          ++next_color_index;
         if(next_color_index < colors.length()) {
           next_color = colors[next_color_index];
-          ++next_color_index;
-          driver.set_goal(5.0, speed_m_s_sp);
+          driver.set_goal(5.0, settings.speed_m_s_sp);
           state = looking_for_intersection;
         } else {
-          driver.set_goal(5.0, speed_m_s_sp);
+          driver.set_goal(5.0, settings.speed_m_s_sp);
           state = waiting_for_end;
         }
       }
@@ -864,27 +891,27 @@ SerialCommands bluetooth_commands(&bluetooth, bluetooth_command_buffer_, sizeof(
 const float max_meters = 1;
 
 void on_speed(SerialCommands * sender) {
-  speed_m_s_sp = atof(sender->Next());
+  settings.speed_m_s_sp = atof(sender->Next());
   bluetooth.println("ok");
 }
 
 void on_left(SerialCommands * sender) {
-  driver.set_goal(max_meters, speed_m_s_sp, -1, 1);
+  driver.set_goal(max_meters, settings.speed_m_s_sp, -1, 1);
   bluetooth.println("ok");
 }
 
 void on_right(SerialCommands * sender) {
-  driver.set_goal(max_meters, speed_m_s_sp, 1, -1);
+  driver.set_goal(max_meters, settings.speed_m_s_sp, 1, -1);
   bluetooth.println("ok");
 }
 
 void on_fwd(SerialCommands * sender) {
-  driver.set_goal(max_meters, speed_m_s_sp, 1, 1);
+  driver.set_goal(max_meters, settings.speed_m_s_sp, 1, 1);
   bluetooth.println("ok");
 }
 
 void on_rev(SerialCommands * sender) {
-  driver.set_goal(max_meters, speed_m_s_sp, -1, -1);
+  driver.set_goal(max_meters, settings.speed_m_s_sp, -1, -1);
   bluetooth.println("ok");
 }
 
@@ -898,7 +925,7 @@ void on_turn(SerialCommands * sender) {
   // turns anticlockwise distance d
   sender->GetSerial()->println("inside turn");
   float degrees = atof(sender->Next());
-  driver.turn_degrees(degrees, speed_m_s_sp);
+  driver.turn_degrees(degrees, settings.speed_m_s_sp);
   bluetooth.println("ok");
 }
 
@@ -977,6 +1004,8 @@ void on_set(SerialCommands * sender) {
           settings.line_k_p = value;
         } else if (param == "line_k_d" || param == "lkd") {
           settings.line_k_d = value;
+        } else if (param == "speed" || param == "s") {
+          settings.speed_m_s_sp = value;
         } else {
           bluetooth.println("invalid parameter " + param);
           return;
@@ -990,6 +1019,8 @@ void on_set(SerialCommands * sender) {
   reply->println((String)"velocity_k_d (vkd): " + settings.velocity_k_d);
   reply->println((String)"position_k_p (xkp): " + settings.position_k_p);
   reply->println((String)"position_k_d (xkd): " + settings.position_k_d);
+  reply->println((String)"speed (sp): " + settings.speed_m_s_sp);
+  
   reply->flush();
   delay(100);
   reply->println((String)"line_k_d (lkd): " + settings.line_k_d);
@@ -1001,7 +1032,7 @@ void on_set(SerialCommands * sender) {
 void on_go(SerialCommands * sender) {
   const char * param1 = sender->Next();
   float d = atof(param1);
-  driver.set_goal(d, speed_m_s_sp);
+  driver.set_goal(d, settings.speed_m_s_sp);
   bluetooth.println("ok");
 }
 
@@ -1035,8 +1066,10 @@ void on_colors_sensed(SerialCommands * sender) {
     return;
   }
   goalpost.set_colors(bottom.c_str(), left.c_str(), right.c_str());
-  
+
+#if(has_display)  
   show_goalpost(bottom.c_str(), left.c_str(), right.c_str());
+#endif
 }
 
 void on_line_sensed(SerialCommands * sender) {
@@ -1127,7 +1160,7 @@ void setup(void) {
   jevois.begin(115200); // camera
   Serial.begin(115200);  // host
   //while(!Serial){}
-  bluetooth.begin(9600);
+  bluetooth.begin(9600); // todo: Loop through all possible baud rates?
   Serial.print("waiting for Bluetooth...");
   while(!bluetooth){
     delay(1);
@@ -1135,22 +1168,30 @@ void setup(void) {
   Serial.println("ready");
   delay(1000);
 
+#if(dads_car)
+  // http://fab.cba.mit.edu/classes/863.15/doc/tutorials/programming/bluetooth/bluetooth40_en.pdf
+  bluetooth.print("AT+BAUD4");
+#else
+  // http://www.instructables.com/id/AT-command-mode-of-HC-05-Bluetooth-module/
   bluetooth.print("AT+BAUD8");
+#endif
   delay(100);
   while(bluetooth.available()) {
     Serial.write(bluetooth.read());
   }
   bluetooth.end();
-  bluetooth.begin(115200); // http://www.instructables.com/id/AT-command-mode-of-HC-05-Bluetooth-module/
+  bluetooth.begin(115200); 
   bluetooth.println("bluetooth connected at 115200");
   Serial.println("bluetooth connected at 115200");
 
 
 
+#if(has_display)
   display.begin();
+  display.fillScreen(GRAY);
+#endif
   motor_left.setup();
   motor_right.setup();
-  display.fillScreen(GRAY);
   camera_commands.SetDefaultHandler(on_unrecognized);
   camera_commands.AddCommand(&cmd_colors_sensed);
   camera_commands.AddCommand(&cmd_line_sensed);
@@ -1168,6 +1209,9 @@ void setup(void) {
   bluetooth_commands.AddCommand(&cmd_right);
   bluetooth_commands.AddCommand(&cmd_stop);
   bluetooth_commands.AddCommand(&cmd_speed);
+
+  Serial.println("setup complete");
+  bluetooth.println("setup complete");
 }
 
 void drawTile(uint8_t x, uint8_t y) {
@@ -1177,9 +1221,6 @@ void drawTile(uint8_t x, uint8_t y) {
   display.fillRect(x+20,y+25,5,20,BLACK);
   display.fillRect(x+25,y+20,20,5,BLUE);
 }
-
-const char * color_order = "krgb";
-int current_color_index = 0;
 
 /*
 class Tile {
@@ -1215,6 +1256,11 @@ LoopChecker loop_checker;
 
 void loop() {
   loop_checker.execute();
+  if(loop_checker.every_n_ms(100)) {
+    Serial.println("inside loop");
+  }
+
+  
   camera_commands.ReadSerial();
   bluetooth_commands.ReadSerial();
 
@@ -1225,18 +1271,22 @@ void loop() {
     driver.execute();
   }
 
+#if(has_display)
   if(loop_checker.every_n_ms(100)) {
-    display.setCursor(10,10);
     //String v_string = (String)left_speedometer.velocity + " " + right_speedometer.velocity+ " "; // space helps drawing issues
     //String v_string = (String)left_speedometer.velocity + " " + right_speedometer.velocity+ " "; // space helps drawing issues
     //String v_string = (String)left_speedometer.get_odo_meters() + " " + right_speedometer.get_odo_meters()+ " "; // space helps drawing issues
     String v_string = (String)line_center + " ";
     int16_t x1,y1;
     uint16_t h, w;
-    display.getTextBounds((char *)v_string.c_str(), 10, 10,
+    uint pad=3;
+    display.setCursor(15, 15);
+    display.getTextBounds((char *)v_string.c_str(), 15, 15,
       &x1, &y1, &w, &h);
-    display.fillRect(x1,y1,w,h,GRAY);
+    //display.fillRect(x1,y1,w,h,planner.current_color_code());
+    display.fillRect(8+pad,0,display_width-16-2*pad, display_height-8-pad, planner.current_color_code());
     display.print(v_string);
   }
+#endif
 }
 
