@@ -200,11 +200,16 @@ public:
   }
 };
 
+#ifdef dads_car
+#define METERS_PER_TICK (1./7132 * 0.7112) * (38/39.4)
+#else
+#define METERS_PER_TICK (1./7132)
+#endif
 
 QuadratureEncoder right_encoder(pin_right_a, pin_right_b);
-Speedometer right_speedometer(right_encoder, 1./7132);
+Speedometer right_speedometer(right_encoder, METERS_PER_TICK);
 QuadratureEncoder left_encoder(pin_left_a, pin_left_b);
-Speedometer left_speedometer(left_encoder, 1./7132);
+Speedometer left_speedometer(left_encoder, METERS_PER_TICK);
 
 // unfortunatly, we need external callbacks
 void on_right_a_changed () {
@@ -436,7 +441,11 @@ public:
       }
     }
     if(left_ahead && right_ahead) {
+#if dads_car
+      return .17 + (left_ahead+right_ahead) / 200.;
+#else
       return .07 + (left_ahead+right_ahead) / 200.;
+#endif      
     }
     return 0;
   }
@@ -649,7 +658,11 @@ public:
   }
 
   void turn_degrees(float degrees, float velocity_max) {
+#ifdef dads_car
+    float meters_per_degree = 0.14/90. * 90./135. * 360/380;
+#else    
     float meters_per_degree = 0.14/90.;
+#endif
     float d = degrees * meters_per_degree;
     int ccw_cw = sign_of(d);
     set_goal(fabs(d), velocity_max, -ccw_cw, ccw_cw);
