@@ -1,6 +1,6 @@
 #include <SerialCommands.h> // see https://github.com/ppedro74/Arduino-SerialCommands
 
-#define dads_car 0
+#define dads_car 1
 
 #define pin_oled_sclk 13
 #define pin_oled_mosi 11
@@ -15,8 +15,13 @@
 const int pin_left_fwd = 5;
 const int pin_left_rev = 6;
 
+#if dads_car
+const int pin_right_fwd = 20;
+const int pin_right_rev = 19;
+#else
 const int pin_right_fwd = 22;
 const int pin_right_rev = 21;
+#endif
 
 const int pin_right_a = 16;
 const int pin_right_b = 17;
@@ -57,13 +62,9 @@ public:
   }
 };
 
-#if(dads_car)
+
 #define bluetooth Serial3
 #define jevois Serial1
-#else
-#define bluetooth Serial3
-#define jevois Serial1
-#endif
 
 float sign_of(float i) {
   if (i<0) return -1;
@@ -228,11 +229,7 @@ class Motor {
   public:
     const int pin_fwd;
     const int pin_rev;
-#if(dads_car)
-    const int power_stall = (int) 0.;
-#else
     const int power_stall = (int) 155.;
-#endif
     const int power_max = (int) 255;
     const int pwm_frequency = 50000;
     
@@ -1157,6 +1154,11 @@ SerialCommand cmd_stop("stop", on_stop);
 SerialCommand cmd_speed("speed", on_speed);
 
 void setup(void) {
+//      while(1) {
+//        digitalWrite(pin_right_fwd, LOW);
+//        digitalWrite(pin_right_rev, HIGH);
+//      }
+  
   jevois.begin(115200); // camera
   Serial.begin(115200);  // host
   //while(!Serial){}
@@ -1168,7 +1170,7 @@ void setup(void) {
   Serial.println("ready");
   delay(1000);
 
-#if(dads_car)
+#if(0)
   // http://fab.cba.mit.edu/classes/863.15/doc/tutorials/programming/bluetooth/bluetooth40_en.pdf
   bluetooth.print("AT+BAUD4");
 #else
